@@ -34,7 +34,7 @@ export default function Navbar() {
       <div className="container flex h-16 items-center">
         <div className="mr-4 flex">
           <Link href="/" className="flex items-center space-x-2">
-            <span className="text-2xl font-bold">NewsHub</span>
+            <span className="text-2xl font-bold">Envisage</span>
           </Link>
         </div>
 

@@ -9,7 +9,7 @@ import Footer from "@/components/footer"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "NewsHub - Your Source for Latest News",
+  title: "Envisage - Your Summary for Latest News",
   description: "A modern news platform with the latest updates across various categories",
 }
 

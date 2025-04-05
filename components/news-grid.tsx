@@ -9,12 +9,13 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Eye, X } from "lucide-react"
+import { getNewsFromGemini } from "@/scripts/news_item_creator"
 
 // Sample news data
 const initialNewsItems = [
   {
     id: 1,
-    title: "Global Markets React to Economic Policy Shifts",
+    title: "FKKKKKKKKKKK Global Markets React to Economic Policy Shifts",
     summary:
       "Stock markets worldwide show mixed reactions to the latest economic policy announcements. Analysts predict continued volatility as investors adjust to the new landscape. Central banks are closely monitoring the situation and may intervene if necessary. The impact on emerging markets has been particularly pronounced, with several currencies experiencing significant fluctuations against the dollar. Investors are advised to maintain diversified portfolios during this period of uncertainty.",
     image: "/placeholder.svg?height=400&width=600",
@@ -92,6 +93,31 @@ export default function NewsGrid() {
   const expandedCardRef = useRef<HTMLDivElement>(null)
   const readTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null)
+
+  useEffect(() => {
+    // Load news from Gemini when component mounts
+    async function loadGeminiNews() {
+      console.log('🔄 news-grid: Starting to load Gemini news');
+      try {
+        console.log('📡 news-grid: Calling getNewsFromGemini()');
+        const geminiNews = await getNewsFromGemini();
+        console.log(`✅ news-grid: Received ${geminiNews.length} items from Gemini`);
+        
+        if (geminiNews.length > 0) {
+          console.log('📥 news-grid: Updating state with new items');
+          setNewsItems(prev => {
+            const combined = [...geminiNews, ...prev];
+            console.log(`📊 news-grid: Total items after merge: ${combined.length}`);
+            return combined;
+          });
+        }
+      } catch (error) {
+        console.error('❌ news-grid: Failed to load Gemini news:', error);
+      }
+    }
+    
+    loadGeminiNews();
+  }, []);
 
   // Handle card click to expand
   const handleCardClick = (id: number, e: React.MouseEvent) => {

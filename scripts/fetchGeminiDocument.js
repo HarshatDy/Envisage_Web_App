@@ -1,8 +1,8 @@
-import { fetchFromCollection } from '../lib/mongodb.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import fs from 'fs';
+import fetch from 'node-fetch';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -18,6 +18,65 @@ if (fs.existsSync(envPath)) {
   dotenv.config(); // Try default .env as fallback
 }
 
+// Backend server URL
+const API_URL = process.env.API_URL || 'http://localhost:3001';
+
+// Verify environment variables are loaded
+console.log('API_URL:', API_URL);
+
+/**
+ * Fetch Gemini API document with Summary key and access the specific date value
+ * Now using the backend server API instead of direct database connection
+ */
+async function fetchGeminiSummary() {
+  try {
+    console.log('Connecting to backend server at:', API_URL);
+    console.log('Looking for document with Summary["2025-04-05_06:00"] value');
+    
+    // Query the backend API endpoint
+    const response = await fetch(`${API_URL}/api/gemini-document`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log('No matching documents found');
+        const errorData = await response.json();
+        
+        if (errorData.availableDates && errorData.availableDates.length) {
+          console.log('Available dates in documents:');
+          console.log(errorData.availableDates);
+        }
+        return;
+      }
+      
+      throw new Error(`API request failed with status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data && data.summary) {
+      console.log(`Found the specific Summary entry for ${data.date}:`);
+      console.log('-'.repeat(80));
+      console.log(data.summary);
+      console.log('-'.repeat(80));
+    } else {
+      console.log('Received a response but no summary data was found');
+      console.log('Response data:', data);
+    }
+  } catch (error) {
+    console.error('Error fetching document from backend API:', error);
+  }
+}
+
+// Execute the function
+fetchGeminiSummary()
+  .then(() => console.log('Script completed'))
+  .catch(error => console.error('Script failed:', error))
+  .finally(() => process.exit()); // Exit the process when done
+
+// The previous implementation which connected directly to MongoDB is commented out:
+/*
+import { fetchFromCollection } from '../lib/mongodb.js';
+
 // Get connection details
 const mongoUri = process.env.MONGODB_URI;
 const mongoDb = process.env.MONGODB_DB;
@@ -26,9 +85,6 @@ const mongoDb = process.env.MONGODB_DB;
 console.log('MONGODB_URI defined:', !!mongoUri);
 console.log('MONGODB_DB defined:', !!mongoDb);
 
-/**
- * Fetch Gemini API document with Summary key and access the specific date value
- */
 async function fetchGeminiSummary() {
   try {
     console.log('Connecting to database:', mongoUri?.substring(0, mongoUri.indexOf('@') + 1) + '[REDACTED]');
@@ -66,9 +122,4 @@ async function fetchGeminiSummary() {
     console.error('Error fetching document from gemini_api collection:', error);
   }
 }
-
-// Execute the function
-fetchGeminiSummary()
-  .then(() => console.log('Script completed'))
-  .catch(error => console.error('Script failed:', error))
-  .finally(() => process.exit()); // Exit the process when done
+*/

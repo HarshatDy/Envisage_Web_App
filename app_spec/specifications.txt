@@ -1,0 +1,63 @@
+Project Name: Envisage
+
+Description:
+A web-based application designed to provide users with a seamless experience for managing personal tasks and goals.
+
+Specifications:
+1. Frontend:
+   - HTML5, CSS3, JavaScript (ES6+)
+   - Framework: Next.js (based on file structure in .next directory)
+   - State Management: React Context API (no clear evidence of Redux in the codebase)
+   - Styling: CSS Modules (based on references in the codebase)
+   - Routing: Built-in Next.js routing
+   - Form Handling: Native React forms
+
+2. Backend:
+   - Language: Node.js
+   - Framework: Next.js API Routes
+   - Database: MongoDB (connection implemented via lib/mongodb.js)
+   - API Design: RESTful APIs with Express server
+   - Data Fetching: Custom MongoDB utility functions for collection operations
+
+3. Authentication:
+   - Authentication strategy not explicitly defined in provided code samples
+
+4. Hosting:
+   - Deployment platform appears to be compatible with Next.js
+   - Static file generation for specific routes (/category/[slug], /news/[slug]) as seen in SSG manifest
+   - Express server for backend API endpoints
+
+5. Version Control:
+   - Git for source code management
+   - Repository structure follows standard web project organization
+
+6. Testing:
+   - Testing framework not clearly identified in the codebase
+   - MongoDB test connections implemented in scripts/mongodb-server.js
+
+7. Deployment:
+   - Static site generation for some routes
+   - Server-side rendering capabilities (Next.js core feature)
+   - Express server for database operations (server.js)
+
+8. Additional Tools:
+   - Code organization follows Next.js conventions with chunk management
+   - Client-side and server-side code separation
+   - Environment variables management with dotenv
+   - CORS support for cross-origin requests
+
+9. Documentation:
+   - Project structure documented in README.md
+   - API utility functions documented with JSDoc comments
+
+10. Security:
+    - HTTPS recommended for deployment (standard for web applications)
+    - Database connection string redaction for security
+
+11. Performance:
+    - Code splitting implemented through Next.js chunking system
+    - Lazy loading support via Next.js
+    - MongoDB connection caching implemented
+
+12. Accessibility:
+    - Accessibility features not explicitly identified in the provided code

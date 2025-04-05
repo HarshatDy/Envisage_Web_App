@@ -47,8 +47,7 @@ function processGeminiData(summaryData) {
         newsItems.push({
           id: id++,
           title: `News Overview for ${formatDate(dateKey)}`,
-          summary: dateData.overall_introduction.substring(0, 500) + 
-                  (dateData.overall_introduction.length > 500 ? '...' : ''),
+          summary: dateData.overall_introduction, // Pass the full summary without truncation
           image: `/placeholder.svg?height=400&width=600&text=News+Overview`,
           category: 'Overview',
           date: new Date().toISOString().split('T')[0],
@@ -84,7 +83,7 @@ function processGeminiData(summaryData) {
           newsItems.push({
             id: id++,
             title: cleanTitle,
-            summary: shortSummary.substring(0, 500) + (shortSummary.length > 500 ? '...' : ''),
+            summary: categoryData.summary, // Pass the full summary without truncation
             image: `/placeholder.svg?height=400&width=600&category=${encodeURIComponent(categoryName)}`,
             category: categoryName,
             date: new Date().toISOString().split('T')[0],
@@ -111,7 +110,7 @@ function processGeminiData(summaryData) {
         newsItems.push({
           id: id++,
           title: cleanTitle,
-          summary: value.summary.substring(0, 500) + (value.summary.length > 500 ? '...' : ''),
+          summary: value.summary, // Pass the full summary without truncation
           image: `/placeholder.svg?height=400&width=600&category=${encodeURIComponent(key)}`,
           category: key,
           date: new Date().toISOString().split('T')[0],
@@ -147,4 +146,45 @@ function formatDate(dateString) {
     console.error('Error formatting date:', error);
     return dateString; // Return original string if parsing fails
   }
+}
+
+export function getRandomNewsForHero(newsItems, count = 5) {
+  console.log('🔄 news_item_creator: Selecting random news for hero section');
+  
+  if (!newsItems || newsItems.length === 0) {
+    console.log('⚠️ news_item_creator: No news items available to select from');
+    return [];
+  }
+  
+  // If we have fewer items than requested, return all of them
+  if (newsItems.length <= count) {
+    console.log(`📊 news_item_creator: Only ${newsItems.length} items available, returning all`);
+    return formatNewsForHero(newsItems);
+  }
+  
+  // Create a copy of the array to avoid modifying the original
+  const itemsCopy = [...newsItems];
+  const selectedItems = [];
+  
+  // Randomly select 'count' items
+  for (let i = 0; i < count; i++) {
+    const randomIndex = Math.floor(Math.random() * itemsCopy.length);
+    selectedItems.push(itemsCopy.splice(randomIndex, 1)[0]);
+  }
+  
+  console.log(`✅ news_item_creator: Selected ${selectedItems.length} random news items for hero`);
+  return formatNewsForHero(selectedItems);
+}
+
+function formatNewsForHero(newsItems) {
+  return newsItems.map((item, index) => ({
+    id: index + 1, // Reassign sequential IDs for the hero
+    title: item.title,
+    summary: item.summary.length > 150 
+      ? item.summary.substring(0, 150) + '...' 
+      : item.summary,
+    image: item.image || "/placeholder.svg?height=600&width=1200",
+    category: item.category,
+    slug: item.slug,
+  }));
 }

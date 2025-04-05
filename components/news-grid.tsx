@@ -119,6 +119,65 @@ export default function NewsGrid() {
     loadGeminiNews();
   }, []);
 
+  // Listen for custom events from hero section
+  useEffect(() => {
+    const handleOpenNewsCard = (event: CustomEvent<{slug: string, title: string}>) => {
+      const { slug } = event.detail;
+      console.log('🔔 news-grid: Received openNewsCard event for:', slug);
+      
+      // Find the news item with the matching slug
+      const newsItem = newsItems.find(item => item.slug === slug);
+      
+      if (newsItem) {
+        console.log('✅ news-grid: Found matching news item with ID:', newsItem.id);
+        setExpandedCardId(newsItem.id);
+        
+        // Scroll the news item into view if it's not visible
+        const newsElement = document.getElementById(`news-item-${newsItem.id}`);
+        if (newsElement) {
+          newsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        console.log('⚠️ news-grid: No matching news item found for slug:', slug);
+      }
+    };
+
+    // Cast the CustomEvent to any to work around TypeScript event typing issues
+    document.addEventListener('openNewsCard', handleOpenNewsCard as any);
+    
+    return () => {
+      document.removeEventListener('openNewsCard', handleOpenNewsCard as any);
+    };
+  }, [newsItems]);
+
+  // Format summary text to convert **text** into headers
+  const formatSummaryText = (text: string) => {
+    if (!text) return "";
+    
+    // Split the text by ** markers
+    const parts = text.split(/\*\*/);
+    
+    // If there's an odd number of ** markers (which is valid markdown)
+    if (parts.length > 1) {
+      return parts.map((part, index) => {
+        // Every odd index (0-based) will be a header if it follows markdown pattern
+        if (index % 2 === 1) {
+          return <h4 className="text-base font-semibold mt-3 mb-2" key={index}>{part}</h4>;
+        }
+        
+        // Format paragraphs with proper spacing
+        return part.split('\n\n').map((paragraph, pIndex) => (
+          <p key={`${index}-${pIndex}`} className="mb-2">{paragraph}</p>
+        ));
+      });
+    }
+    
+    // If no ** markers, just split by paragraphs
+    return text.split('\n\n').map((paragraph, index) => (
+      <p key={index} className="mb-2">{paragraph}</p>
+    ));
+  };
+
   // Handle card click to expand
   const handleCardClick = (id: number, e: React.MouseEvent) => {
     e.preventDefault() // Prevent navigation
@@ -195,7 +254,7 @@ export default function NewsGrid() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative">
       {newsItems.map((news) => (
-        <div key={news.id} className="relative">
+        <div key={news.id} id={`news-item-${news.id}`} className="relative">
           {/* Regular card */}
           <div
             className={`${expandedCardId === news.id ? "hidden" : "block"}`}
@@ -237,7 +296,9 @@ export default function NewsGrid() {
 
                 <div className="p-4">
                   <h3 className="font-bold text-lg mb-2">{news.title}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-3">{news.summary}</p>
+                  <div className="text-sm text-muted-foreground line-clamp-3">
+                    {formatSummaryText(news.summary.substring(0, 150) + (news.summary.length > 150 ? '...' : ''))}
+                  </div>
                 </div>
               </Card>
             </div>
@@ -283,19 +344,7 @@ export default function NewsGrid() {
                     </div>
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <p>{news.summary}</p>
-                    <p>
-                      Additional content would appear here in a real article. This expanded view allows users to read
-                      the full article without navigating away from the current page.
-                    </p>
-                    <p>
-                      When you scroll to the bottom of this article and spend at least 5 seconds reading, it will be
-                      marked as "Read" and moved to the bottom of the news grid.
-                    </p>
-                    <p>
-                      This interaction pattern helps users keep track of what they've already read and prioritizes fresh
-                      content at the top of the list.
-                    </p>
+                    {formatSummaryText(news.summary)}
                   </div>
                   <div className="mt-6 flex justify-between">
                     <Button variant="outline" onClick={closeExpandedCard}>

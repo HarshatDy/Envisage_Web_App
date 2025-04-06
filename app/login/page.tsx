@@ -5,7 +5,8 @@ import type React from "react"
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, Facebook, Github, Twitter } from "lucide-react"
+import { Eye, EyeOff, Mail } from "lucide-react"
+import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,27 +18,80 @@ export default function LoginPage() {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [loginData, setLoginData] = useState({ email: "", password: "" })
+  const [registerData, setRegisterData] = useState({ name: "", email: "", password: "" })
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
-    // Simulate login process
-    setTimeout(() => {
+    try {
+      const result = await signIn("credentials", {
+        redirect: false,
+        email: loginData.email,
+        password: loginData.password,
+      })
+
+      if (result?.error) {
+        console.error("Login failed:", result.error)
+        alert("Login failed: " + result.error)
+      } else {
+        router.push("/")
+      }
+    } catch (error) {
+      console.error("Login error:", error)
+      alert("An error occurred during login")
+    } finally {
       setIsLoading(false)
-      router.push("/")
-    }, 1500)
+    }
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
-    // Simulate registration process
-    setTimeout(() => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: registerData.name,
+          email: registerData.email,
+          password: registerData.password,
+          authProvider: "email"
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        // Login after successful registration
+        await signIn("credentials", {
+          redirect: false,
+          email: registerData.email,
+          password: registerData.password,
+        })
+        router.push("/")
+      } else {
+        console.error("Registration failed:", data.error)
+        alert("Registration failed: " + data.error)
+      }
+    } catch (error) {
+      console.error("Registration error:", error)
+      alert("An error occurred during registration")
+    } finally {
       setIsLoading(false)
-      router.push("/")
-    }, 1500)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true)
+    try {
+      await signIn("google", { callbackUrl: "/" })
+    } catch (error) {
+      console.error("Google sign-in error:", error)
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -57,7 +111,14 @@ export default function LoginPage() {
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="name@example.com" required />
+                  <Input 
+                    id="email" 
+                    type="email" 
+                    placeholder="name@example.com" 
+                    required 
+                    value={loginData.email}
+                    onChange={(e) => setLoginData({...loginData, email: e.target.value})}
+                  />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -67,7 +128,14 @@ export default function LoginPage() {
                     </Link>
                   </div>
                   <div className="relative">
-                    <Input id="password" type={showPassword ? "text" : "password"} placeholder="••••••••" required />
+                    <Input 
+                      id="password" 
+                      type={showPassword ? "text" : "password"} 
+                      placeholder="••••••••" 
+                      required 
+                      value={loginData.password}
+                      onChange={(e) => setLoginData({...loginData, password: e.target.value})}
+                    />
                     <Button
                       type="button"
                       variant="ghost"
@@ -89,11 +157,24 @@ export default function LoginPage() {
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
-                  <Input id="name" placeholder="John Doe" required />
+                  <Input 
+                    id="name" 
+                    placeholder="John Doe" 
+                    required 
+                    value={registerData.name}
+                    onChange={(e) => setRegisterData({...registerData, name: e.target.value})}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="register-email">Email</Label>
-                  <Input id="register-email" type="email" placeholder="name@example.com" required />
+                  <Input 
+                    id="register-email" 
+                    type="email" 
+                    placeholder="name@example.com" 
+                    required 
+                    value={registerData.email}
+                    onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="register-password">Password</Label>
@@ -103,6 +184,8 @@ export default function LoginPage() {
                       type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
                       required
+                      value={registerData.password}
+                      onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
                     />
                     <Button
                       type="button"
@@ -127,23 +210,20 @@ export default function LoginPage() {
             <div className="absolute inset-0 flex items-center">
               <Separator className="w-full" />
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
+            <div className="relative flex justify-center tesarxt-xs uppercase">
               <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <Button variant="outline" className="w-full">
-              <Facebook className="h-4 w-4 mr-2" />
-              Facebook
-            </Button>
-            <Button variant="outline" className="w-full">
-              <Twitter className="h-4 w-4 mr-2" />
-              Twitter
-            </Button>
-            <Button variant="outline" className="w-full">
-              <Github className="h-4 w-4 mr-2" />
-              GitHub
+          <div className="flex justify-center">
+            <Button 
+              variant="outline" 
+              className="w-full max-w-xs"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+            >
+              <Mail className="h-4 w-4 mr-2" />
+              Google
             </Button>
           </div>
         </CardContent>

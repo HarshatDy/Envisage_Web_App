@@ -18,12 +18,12 @@ export async function GET() {
     
     // Look for the specific date in the Summary field
     for (const doc of documents) {
-      if (doc.Summary && doc.Summary['2025-04-05_06:00']) {
+      if (doc.Summary && doc.Summary['2025-04-06_18:00']) {
         // Extract just the specific date value
-        const summaryValue = doc.Summary['2025-04-05_06:00'];
+        const summaryValue = doc.Summary['2025-04-06_18:00'];
         
         // Print to server console
-        console.log('Found Summary["2025-04-05_06:00"] value:');
+        console.log('Found Summary["2025-04-06_18:00"] value:');
         console.log('-'.repeat(50));
         console.log(summaryValue);
         console.log('-'.repeat(50));
@@ -31,14 +31,14 @@ export async function GET() {
         // Return just the summary value as the response
         return NextResponse.json({ 
           summary: summaryValue,
-          date: '2025-04-05_06:00' 
+          date: '2025-04-06_18:00' 
         });
       }
     }
     
     // If we get here, we found documents with Summary but not the specific date
     return NextResponse.json({ 
-      message: 'No document contains Summary["2025-04-05_06:00"]',
+      message: 'No document contains Summary["2025-04-06_18:00"]',
       availableDates: documents[0].Summary ? Object.keys(documents[0].Summary) : []
     }, { status: 404 });
     

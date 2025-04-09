@@ -6,6 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
+import { ObjectId } from 'mongodb'; // Add this import
 import { connectToDatabase, fetchFromCollection, fetchPaginatedData, fetchSingleDocument, fetchWithAggregation } from '../lib/mongodb.js';
 
 // Get the directory of the current module
@@ -159,14 +160,14 @@ app.get('/api/gemini-document', async (req, res) => {
     
     // Look for the specific date in the Summary field
     for (const doc of documents) {
-      if (doc.Summary && doc.Summary['2025-04-05_06:00']) {
-        const summaryValue = doc.Summary['2025-04-05_06:00'];
-        return res.json({ summary: summaryValue, date: '2025-04-05_06:00' });
+      if (doc.Summary && doc.Summary['2025-04-06_18:00']) {
+        const summaryValue = doc.Summary['2025-04-06_18:00'];
+        return res.json({ summary: summaryValue, date: '2025-04-06_18:00' });
       }
     }
     
     return res.status(404).json({
-      message: 'No document contains Summary["2025-04-05_06:00"]',
+      message: 'No document contains Summary["2025-04-06_18:00"]',
       availableDates: documents[0].Summary ? Object.keys(documents[0].Summary) : []
     });
   } catch (error) {
@@ -698,8 +699,10 @@ app.post('/api/users/:userId/interactions', async (req, res) => {
     
     // Update user stats if the article was completed
     if (completed) {
+      console.log('Article completed, updating user stats...');
       const userStats = await UserStats.findOne({ userId });
       if (userStats) {
+        console.log('User stats found, updating...');
         userStats.articlesRead += 1;
         if (timeSpent) userStats.totalTimeSpent += timeSpent;
         userStats.lastActivity = new Date();
@@ -707,6 +710,7 @@ app.post('/api/users/:userId/interactions', async (req, res) => {
         // Find the article to get its category
         const article = await Article.findById(articleId);
         if (article && article.category) {
+          console.log('Article category found, updating category engagement...');
           const category = article.category;
           const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
           
@@ -723,9 +727,11 @@ app.post('/api/users/:userId/interactions', async (req, res) => {
         );
         
         if (dailyStatIndex >= 0) {
+          console.log('Daily stats found, updating...');
           userStats.dailyStats[dailyStatIndex].articlesRead += 1;
           if (timeSpent) userStats.dailyStats[dailyStatIndex].timeSpent += timeSpent;
         } else {
+          console.log('No daily stats found, creating new entry...');
           userStats.dailyStats.push({
             date: new Date(),
             timeSpent: timeSpent || 0,
@@ -734,7 +740,12 @@ app.post('/api/users/:userId/interactions', async (req, res) => {
         }
         
         await userStats.save();
+        console.log('User stats updated and saved.');
+      } else {
+        console.log('User stats not found.');
       }
+    } else {
+      console.log('Article not completed.');
     }
     
     return res.status(201).json({
@@ -787,6 +798,473 @@ app.get('/api/users/:userId/interactions', async (req, res) => {
   }
 });
 
+// Add a new route to increment article view count
+app.post('/api/articles/:id/view', async (req, res) => {
+  try {
+    await connectMongooseAndInitModels();
+    const { Article } = models;
+    
+    const { id } = req.params;
+    
+    // Find and update the article, incrementing viewCount by 1
+    const article = await Article.findByIdAndUpdate(
+      id,
+      { $inc: { viewCount: 1 } },
+      { new: true }
+    );
+    
+    if (!article) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    
+    return res.json({
+      message: 'Article view count incremented',
+      article: {
+        id: article._id,
+        viewCount: article.viewCount
+      }
+    });
+  } catch (error) {
+    console.error(`Error updating view count for article ${req.params.id}:`, error);
+    return res.status(500).json({ error: 'Failed to update article view count' });
+  }
+});
+
+// Fetch envisage_web document with newsItems
+app.get('/api/envisage_web', async (req, res) => {
+  try {
+    const { date } = req.query;
+    let query = {};
+    
+    console.log('Fetching document from envisage_web collection...');
+    console.log('Available collections check:');
+    
+    try {
+      const { db } = await connectToDatabase();
+      const collections = await db.listCollections().toArray();
+      const collectionNames = collections.map(c => c.name);
+      console.log('Available collections:', collectionNames);
+      console.log('envisage_web exists:', collectionNames.includes('envisage_web'));
+    } catch (e) {
+      console.error('Error checking collections:', e);
+    }
+    
+    // If date is provided, use it as a specific query parameter
+    if (date) {
+      console.log(`Querying envisage_web with specific date: ${date}`);
+      query = { "2025-04-06_18:00": { $exists: true } };
+    }
+    
+    const document = await fetchSingleDocument(
+      'envisage_web',
+      query,
+      process.env.MONGODB_URI,
+      process.env.MONGODB_DB
+    );
+    
+    if (!document) {
+      console.log('No document found in envisage_web collection!');
+      
+      // Try to fetch from gemini_api as a fallback and process it
+      console.log('Attempting to fetch from gemini_api collection as fallback...');
+      const geminiDoc = await fetchSingleDocument(
+        'gemini_api',
+        { 'Summary': { $exists: true } },
+        process.env.MONGODB_URI,
+        process.env.MONGODB_DB
+      );
+      
+      if (geminiDoc) {
+        console.log('Found a document in gemini_api collection!');
+        console.log('Document structure:', Object.keys(geminiDoc));
+        
+        // ...existing code for processing the gemini document...
+      }
+      
+      return res.status(404).json({ message: 'No document found in envisage_web collection' });
+    }
+    
+    console.log('Found document in envisage_web collection!');
+    console.log('Document keys:', Object.keys(document));
+    console.log('Document _id:', document._id);
+    
+    // If there's a specific date query, filter and restructure the response
+    if (date && document["2025-04-06_18:00"]) {
+      const dateData = document["2025-04-06_18:00"];
+      
+      // Process data for the specific date to create newsItems
+      const newsItems = [];
+      let id = 1;
+      
+      // Add overall introduction as a news item if it exists
+      if (dateData.overall_introduction && dateData.overall_introduction.length > 100) {
+        newsItems.push({
+          id: id++,
+          title: `News Overview for ${formatDate("2025-04-06_18:00")}`,
+          summary: dateData.overall_introduction,
+          image: `/placeholder.svg?height=400&width=600&text=News+Overview`,
+          category: 'Overview',
+          date: new Date().toISOString().split('T')[0],
+          slug: `news-overview-2025-04-06-18-00`,
+          views: Math.floor(Math.random() * 2000) + 500,
+          isRead: false,
+        });
+      }
+      
+      // Process categories if they exist
+      if (dateData.categories && typeof dateData.categories === 'object') {
+        Object.entries(dateData.categories).forEach(([categoryName, categoryData]) => {
+          if (!categoryData || !categoryData.summary || categoryData.summary.length < 100) {
+            return;
+          }
+          
+          const title = categoryData.title || `Latest in ${categoryName}`;
+          // Clean the title - remove markdown formatting
+          const cleanTitle = title.replace(/\*\*/g, '').replace(/\[|\]/g, '');
+          
+          newsItems.push({
+            id: id++,
+            title: cleanTitle,
+            summary: categoryData.summary,
+            image: `/placeholder.svg?height=400&width=600&category=${encodeURIComponent(categoryName)}`,
+            category: categoryName,
+            date: new Date().toISOString().split('T')[0],
+            slug: cleanTitle.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, '-').substring(0, 50),
+            views: Math.floor(Math.random() * 2000) + 500,
+            isRead: false,
+            articleCount: categoryData.article_count || 0,
+            sourceCount: categoryData.source_count || 0,
+          });
+        });
+      }
+      
+      // Return the restructured document with newsItems
+      return res.json({
+        _id: document._id,
+        date: "2025-04-06_18:00",
+        newsItems: newsItems
+      });
+    }
+    
+    return res.json(document);
+  } catch (error) {
+    console.error('Error fetching envisage_web document:', error);
+    return res.status(500).json({ error: 'Failed to fetch envisage_web document' });
+  }
+});
+
+// Helper function to format date strings
+function formatDate(dateString) {
+  try {
+    // Extract date parts from the string format (e.g., "2025-04-06_18:00")
+    const [datePart, timePart] = dateString.split('_');
+    const [year, month, day] = datePart.split('-').map(Number);
+    
+    // Format the date 
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric'
+    });
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return dateString; // Return original string if parsing fails
+  }
+}
+
+// Increment view count for an item in envisage_web
+app.post('/api/envisage_web/view', async (req, res) => {
+  try {
+    const { articleId, dateKey, newsItemId } = req.body;
+    
+    if (!articleId) {
+      return res.status(400).json({ error: 'Article ID is required' });
+    }
+    
+    // Split the articleId into document ID and news item ID if it contains '_'
+    let documentId, itemId;
+    
+    if (articleId.includes('_')) {
+      [documentId, itemId] = articleId.split('_');
+      console.log(`Parsed articleId "${articleId}" into documentId: "${documentId}" and itemId: "${itemId}"`);
+    } else {
+      documentId = articleId;
+      itemId = newsItemId;
+      console.log(`Using provided documentId: "${documentId}" and newsItemId: "${itemId}"`);
+    }
+    
+    // Ensure we have a numeric newsItemId for the query
+    const numericItemId = parseInt(itemId || newsItemId);
+    
+    if (isNaN(numericItemId)) {
+      return res.status(400).json({ 
+        error: 'Invalid news item ID - must be a number',
+        details: { articleId, newsItemId, parsedItemId: itemId }
+      });
+    }
+    
+    console.log(`Incrementing view count for newsItem ${numericItemId} in document ${documentId}`);
+    
+    const { db } = await connectToDatabase(
+      process.env.MONGODB_URI,
+      process.env.MONGODB_DB
+    );
+    
+    // Import ObjectId from MongoDB directly - using ES module import
+    // import { ObjectId } from 'mongodb';
+    
+    // Try to convert to ObjectId if it's a valid format
+    let documentObjectId;
+    try {
+      // Check if the documentId is a valid ObjectId
+      if (ObjectId.isValid(documentId)) {
+        documentObjectId = new ObjectId(documentId);
+        console.log(`Converted documentId to ObjectId: ${documentObjectId}`);
+      } else {
+        documentObjectId = documentId;
+        console.log(`Using documentId as string: ${documentId}`);
+      }
+    } catch (error) {
+      console.log(`Error converting to ObjectId, using as string: ${documentId}`);
+      documentObjectId = documentId;
+    }
+    
+    // Find the document to determine the date key - try both string and ObjectId
+    console.log(`Searching for document with _id: ${documentObjectId}`);
+    let document = await db.collection('envisage_web').findOne({ _id: documentObjectId });
+    
+    // If not found with ObjectId, try with string
+    if (!document && documentObjectId !== documentId) {
+      console.log(`Document not found with ObjectId, trying with string ID: ${documentId}`);
+      document = await db.collection('envisage_web').findOne({ _id: documentId });
+    }
+    
+    if (!document) {
+      console.log('Document still not found, printing available documents:');
+      const allDocs = await db.collection('envisage_web').find({}, { projection: { _id: 1 }}).toArray();
+      console.log('Available document IDs:', allDocs.map(doc => doc._id));
+      
+      return res.status(404).json({ 
+        error: 'Document not found',
+        details: { documentId }
+      });
+    }
+    
+    console.log(`Found document with _id: ${document._id}`);
+    console.log('Document keys:', Object.keys(document));
+    
+    // Find the date key (e.g., "2025-04-06_18:00")
+    // This is typically the first key that isn't "_id" and contains date format
+    const availableKeys = Object.keys(document).filter(key => key !== '_id');
+    const targetDateKey = dateKey || availableKeys.find(key => key.includes('-') || key.includes('_'));
+    
+    if (!targetDateKey) {
+      return res.status(400).json({ 
+        error: 'Could not determine date key in document',
+        details: { documentId, availableKeys }
+      });
+    }
+    
+    console.log(`Using date key: "${targetDateKey}" from document`);
+    
+    // Create the MongoDB update query to increment the views in the newsItems array
+    // Based on the structure where newsItems is inside the date object
+    const updatePath = {};
+    updatePath[`${targetDateKey}.newsItems.$[elem].views`] = 1;
+    
+    const result = await db.collection('envisage_web').updateOne(
+      { _id: documentId },
+      { $inc: updatePath },
+      { 
+        arrayFilters: [{ "elem.id": numericItemId }] 
+      }
+    );
+    
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ 
+        error: 'Document not found or news item not found in array', 
+        details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
+      });
+    }
+    
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({ 
+        error: 'View count not incremented - news item may not exist in array',
+        details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
+      });
+    }
+    
+    return res.json({
+      message: 'View count incremented successfully',
+      updated: true,
+      details: {
+        documentId,
+        dateKey: targetDateKey,
+        newsItemId: numericItemId
+      }
+    });
+  } catch (error) {
+    console.error('Error incrementing view count in envisage_web:', error);
+    return res.status(500).json({ error: 'Failed to increment view count', message: error.message });
+  }
+});
+
+// Modify the user article interaction endpoint to handle envisage_web articleIds
+app.post('/api/users/:userId/interactions', async (req, res) => {
+  try {
+    await connectMongooseAndInitModels();
+    const { UserArticleInteraction, UserStats } = models;
+    
+    const { userId } = req.params;
+    const { articleId, timeSpent, completed, lastPosition } = req.body;
+    
+    if (!articleId) {
+      return res.status(400).json({ error: 'Article ID is required' });
+    }
+    
+    // Find existing interaction or create new one
+    let interaction = await UserArticleInteraction.findOne({ userId, articleId });
+    console.log("Found existing interaction:", interaction);
+    
+    if (!interaction) {
+      // Create new interaction
+      interaction = new UserArticleInteraction({
+        userId,
+        articleId,
+        timeSpent: timeSpent || 0,
+        completed: completed || false,
+        interactionDate: new Date(),
+        lastPosition: lastPosition || 0
+      });
+    } else {
+      // Update existing interaction
+      if (timeSpent !== undefined) interaction.timeSpent += timeSpent;  // Add to existing time
+      if (completed !== undefined) interaction.completed = completed;
+      if (lastPosition !== undefined) interaction.lastPosition = lastPosition;
+      interaction.interactionDate = new Date();
+    }
+    
+    await interaction.save();
+    
+    // Update user stats if the article was completed
+    if (completed) {
+      console.log('Article completed, updating user stats...');
+      const userStats = await UserStats.findOne({ userId });
+      if (userStats) {
+        console.log('User stats found, updating...');
+        userStats.articlesRead += 1;
+        if (timeSpent) userStats.totalTimeSpent += timeSpent;
+        userStats.lastActivity = new Date();
+        
+        // For envisage_web items, extract the category directly
+        // If articleId is in format docId_itemId, parse the newsItemId and get category from envisage_web
+        if (articleId.includes('_')) {
+          try {
+            const [docId, itemId] = articleId.split('_');
+            
+            const { db } = await connectToDatabase(
+              process.env.MONGODB_URI,
+              process.env.MONGODB_DB
+            );
+            
+            const doc = await db.collection('envisage_web').findOne(
+              { _id: docId, "newsItems.id": parseInt(itemId) },
+              { projection: { "newsItems.$": 1 } }
+            );
+            
+            if (doc && doc.newsItems && doc.newsItems[0]) {
+              const category = doc.newsItems[0].category;
+              if (category) {
+                const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
+                
+                userStats.categoryEngagement.set(category, {
+                  timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
+                  articlesRead: existingEngagement.articlesRead + 1
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error processing envisage_web category:', error);
+          }
+        }
+        
+        // Update daily stats
+        const today = new Date().toDateString();
+        const dailyStatIndex = userStats.dailyStats.findIndex(
+          ds => new Date(ds.date).toDateString() === today
+        );
+        
+        if (dailyStatIndex >= 0) {
+          console.log('Daily stats found, updating...');
+          userStats.dailyStats[dailyStatIndex].articlesRead += 1;
+          if (timeSpent) userStats.dailyStats[dailyStatIndex].timeSpent += timeSpent;
+        } else {
+          console.log('No daily stats found, creating new entry...');
+          userStats.dailyStats.push({
+            date: new Date(),
+            timeSpent: timeSpent || 0,
+            articlesRead: 1
+          });
+        }
+        
+        await userStats.save();
+        console.log('User stats updated and saved.');
+      } else {
+        console.log('User stats not found.');
+      }
+    } else {
+      console.log('Article not completed.');
+    }
+    
+    return res.status(201).json({
+      message: 'User article interaction recorded successfully',
+      interaction
+    });
+  } catch (error) {
+    console.error(`Error recording interaction for user ${req.params.userId}:`, error);
+    return res.status(500).json({ error: 'Failed to record user article interaction' });
+  }
+});
+
+// New route to get all documents from envisage_web collection
+app.get('/api/envisage_web/all', async (req, res) => {
+  try {
+    console.log('Fetching all documents from envisage_web collection...');
+    
+    const documents = await fetchFromCollection(
+      'envisage_web',
+      {},  // Empty query to fetch all documents
+      {},
+      process.env.MONGODB_URI,
+      process.env.MONGODB_DB
+    );
+    
+    console.log(`Found ${documents.length} documents in envisage_web collection`);
+    
+    // Print each document to console
+    documents.forEach((doc, index) => {
+      console.log(`Document ${index + 1}:`, {
+        _id: doc._id,
+        keys: Object.keys(doc),
+        hasNewsItems: Array.isArray(doc.newsItems),
+        newsItemsCount: Array.isArray(doc.newsItems) ? doc.newsItems.length : 0
+      });
+      
+      // Print the full document structure (might be large)
+      console.log(`Document ${index + 1} full structure:`, JSON.stringify(doc, null, 2));
+    });
+    
+    return res.json({
+      count: documents.length,
+      documents
+    });
+  } catch (error) {
+    console.error('Error fetching all envisage_web documents:', error);
+    return res.status(500).json({ error: 'Failed to fetch documents from envisage_web collection' });
+  }
+});
+
 // Start server - binding to localhost for security in production, or all interfaces in development
 const isDevelopment = process.env.NODE_ENV === 'development';
 const hostname = isDevelopment ? '0.0.0.0' : 'localhost';
@@ -805,7 +1283,7 @@ app.listen(PORT, hostname, () => {
   console.log(`   GET  /api/test                  - Test if server is running`);
   console.log(`   GET  /api/collections           - List all collections`);
   console.log(`   GET  /api/gemini-document       - Get Gemini document with Summary field`);
-  console.log(`   GET  /api/news                  - Get news with optional filtering`);
+  console.log(`   GET  /api/news                  - Get news with optional category, pagination`);
   console.log(`   GET  /api/:collection/:id       - Get document by ID from any collection`);
   console.log(`   POST /api/:collection/query     - Query collection with filters`);
   console.log(`   POST /api/:collection/aggregate - Run aggregation pipeline on collection`);
@@ -819,6 +1297,10 @@ app.listen(PORT, hostname, () => {
   console.log(`   POST /api/users/:id/daily-stats - Add daily stats for a user`);
   console.log(`   POST /api/users/:userId/interactions - Record user interaction with an article`);
   console.log(`   GET  /api/users/:userId/interactions - Get user interactions (with pagination)`);
+  console.log(`   POST /api/articles/:id/view      - Increment article view count`);
+  console.log(`   GET  /api/envisage_web           - Fetch data from envisage_web collection`);
+  console.log(`   POST /api/envisage_web/view      - Increment view count for an item in envisage_web`);
+  console.log(`   GET  /api/envisage_web/all       - Get all documents from envisage_web collection`);
   
   console.log('\n💡 For frontend, configure .env.local with:');
   console.log(`   NEXT_PUBLIC_API_URL=http://localhost:${PORT}`);
@@ -836,7 +1318,6 @@ async function runMongoDBServer() {
     // Test querying collections
     console.log('Available collections:');
     const collections = await db.listCollections().toArray();
-    collections.forEach(collection => console.log(`- ${collection.name}`));
     
     // Fetch a sample from gemini_api collection
     const geminiDocs = await fetchFromCollection('gemini_api', {}, { limit: 1 });

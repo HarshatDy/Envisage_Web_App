@@ -31,7 +31,7 @@ console.log('API_URL:', API_URL);
 async function fetchGeminiSummary() {
   try {
     console.log('Connecting to backend server at:', API_URL);
-    console.log('Looking for document with Summary["2025-04-05_06:00"] value');
+    console.log('Looking for document with Summary["2025-04-06_18:00"] value');
     
     // Query the backend API endpoint
     const response = await fetch(`${API_URL}/api/gemini-document`);
@@ -89,7 +89,7 @@ async function fetchGeminiSummary() {
   try {
     console.log('Connecting to database:', mongoUri?.substring(0, mongoUri.indexOf('@') + 1) + '[REDACTED]');
     console.log('Using database:', mongoDb);
-    console.log('Looking for document with Summary["2025-04-05_06:00"] value');
+    console.log('Looking for document with Summary["2025-04-06_18:00"] value');
     
     // Find documents that have the Summary field
     const documents = await fetchFromCollection('gemini_api', { 'Summary': { $exists: true } }, {}, mongoUri, mongoDb);
@@ -99,16 +99,16 @@ async function fetchGeminiSummary() {
       
       // Look for documents that have the specific date key inside Summary
       for (const doc of documents) {
-        if (doc.Summary && doc.Summary['2025-04-05_06:00']) {
-          console.log('Found the specific Summary entry for 2025-04-05_06:00:');
+        if (doc.Summary && doc.Summary['2025-04-06_18:00']) {
+          console.log('Found the specific Summary entry for 2025-04-06_18:00:');
           console.log('-'.repeat(80));
-          console.log(doc.Summary['2025-04-05_06:00']);
+          console.log(doc.Summary['2025-04-06_18:00']);
           console.log('-'.repeat(80));
           return; // Exit once we find the first matching document
         }
       }
       
-      console.log('No document contains Summary["2025-04-05_06:00"]');
+      console.log('No document contains Summary["2025-04-06_18:00"]');
       
       // Show what date entries are available in the first document
       if (documents[0].Summary) {

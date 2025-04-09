@@ -9,7 +9,23 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Eye, X } from "lucide-react"
-import { getNewsFromGemini } from "@/scripts/news_item_creator"
+import { useSession } from "next-auth/react" // For user authentication
+
+// Define interface for news item
+interface NewsItem {
+  id: number;
+  title: string;
+  summary: string;
+  image: string;
+  category: string;
+  date: string;
+  slug: string;
+  views: number;
+  isRead: boolean;
+  articleId?: string; // MongoDB _id for the article
+  articleCount?: number; 
+  sourceCount?: number;
+}
 
 // Sample news data
 const initialNewsItems = [
@@ -24,6 +40,7 @@ const initialNewsItems = [
     slug: "global-markets-react",
     views: 1243,
     isRead: false,
+    articleId: "sample_1", // Combined sample ID format
   },
   {
     id: 2,
@@ -36,6 +53,7 @@ const initialNewsItems = [
     slug: "mediterranean-diet-benefits",
     views: 876,
     isRead: false,
+    articleId: "sample_2", // Combined sample ID format
   },
   {
     id: 3,
@@ -48,6 +66,7 @@ const initialNewsItems = [
     slug: "sports-league-expansion",
     views: 654,
     isRead: false,
+    articleId: "sample_3", // Combined sample ID format
   },
   {
     id: 4,
@@ -88,36 +107,277 @@ const initialNewsItems = [
 ]
 
 export default function NewsGrid() {
-  const [newsItems, setNewsItems] = useState(initialNewsItems)
+  const [newsItems, setNewsItems] = useState<NewsItem[]>(initialNewsItems)
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null)
   const expandedCardRef = useRef<HTMLDivElement>(null)
   const readTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null)
+  const { data: session } = useSession() // Get current user session
+  const timeSpentRef = useRef<{ [key: number]: number }>({}) // Track time spent on each article
+  const startTimeRef = useRef<number | null>(null) // Track when user started reading
+  const userId = session?.user?.id // Current user ID
+  const processingMarkAsReadRef = useRef<Set<number>>(new Set()); // Track articles being processed
+  const scrollDebounceTimerRef = useRef<NodeJS.Timeout | null>(null); // Debounce scroll events
 
+  // Load news items from envisage_web collection and check user interaction history
   useEffect(() => {
-    // Load news from Gemini when component mounts
-    async function loadGeminiNews() {
-      console.log('🔄 news-grid: Starting to load Gemini news');
+    async function loadNewsAndCheckReadStatus() {
+      console.log('🔄 news-grid: Loading news items from envisage_web and checking read status');
+      
       try {
-        console.log('📡 news-grid: Calling getNewsFromGemini()');
-        const geminiNews = await getNewsFromGemini();
-        console.log(`✅ news-grid: Received ${geminiNews.length} items from Gemini`);
+        // Step 1: Load all news items from envisage_web collection
+        let allNewsItems: NewsItem[] = [];
+        let readArticleIds = new Set<string>();
         
-        if (geminiNews.length > 0) {
-          console.log('📥 news-grid: Updating state with new items');
-          setNewsItems(prev => {
-            const combined = [...geminiNews, ...prev];
-            console.log(`📊 news-grid: Total items after merge: ${combined.length}`);
-            return combined;
+        try {
+          // Fetch news items from envisage_web collection
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/envisage_web`);
+          if (response.ok) {
+            const result = await response.json();
+            console.log(`✅ news-grid: Loaded envisage_web data`);
+            
+            // DEBUG: Print the full envisage_web document
+            console.log('📋 DEBUG - Full envisage_web document:', result);
+            
+            // Find the date key
+            const dateKey = result.envisage_web ? Object.keys(result.envisage_web)[0] : null;
+
+            // Check if the data contains newsItems array
+            if (dateKey && result.envisage_web && result.envisage_web[dateKey] && result.envisage_web[dateKey].newsItems && Array.isArray(result.envisage_web[dateKey].newsItems)) {
+              // DEBUG: Print the newsItems array
+              console.log('📊 DEBUG - News items array:', result.envisage_web[dateKey].newsItems);
+              
+              // Fixed issue with articleId assignment - get the correct document ID from the top level
+              // The document ID is directly in the result object, not in the dateKey object
+              const documentId = result._id;
+              console.log('🔑 DEBUG - Document ID from top level that should be used as articleId base:', documentId);
+              
+              if (!documentId) {
+                console.error('❌ DEBUG - Missing document _id in API response. Cannot assign articleId to news items');
+                console.log('📋 DEBUG - Full result structure for troubleshooting:', 
+                  JSON.stringify({
+                    hasId: !!result._id,
+                    topLevelKeys: Object.keys(result),
+                    resultStructure: Object.keys(result).reduce((acc, key) => ({
+                      ...acc,
+                      [key]: typeof result[key]
+                    }), {})
+                  })
+                );
+              }
+              
+              // Map the newsItems data to our NewsItem format with combined articleId
+              allNewsItems = result.envisage_web[dateKey].newsItems.map((item: any) => {
+                // Create a combined articleId using document ID and news item ID
+                const combinedArticleId = documentId ? `${documentId}_${item.id}` : `fallback-id_${item.id}`;
+                
+                const newsItem = {
+                  id: item.id,
+                  title: item.title,
+                  summary: item.summary || "",
+                  image: item.image || "/placeholder.svg?height=400&width=600",
+                  category: item.category,
+                  date: item.date,
+                  slug: item.slug,
+                  views: item.views || 0,
+                  isRead: false,
+                  articleId: combinedArticleId, // Use combined ID format
+                  articleCount: item.articleCount,
+                  sourceCount: item.sourceCount
+                };
+                
+                console.log(`📋 DEBUG - Created news item ${item.id} with combined articleId: ${newsItem.articleId}`);
+                return newsItem;
+              });
+              
+              console.log(`📊 news-grid: Processed ${allNewsItems.length} news items from envisage_web`);
+              
+              // DEBUG: Print the unique articleIds created
+              console.log('🔑 DEBUG - Generated articleIds:', allNewsItems.map(item => ({
+                id: item.id,
+                articleId: item.articleId
+              })));
+            } else {
+              console.error('❌ news-grid: Invalid data structure in envisage_web');
+              
+              // DEBUG: Print what we received to help diagnose the problem
+              console.log('❌ DEBUG - Invalid envisage_web structure received:', {
+                hasResult: !!result,
+                resultType: typeof result,
+                hasEnvisageWeb: !!result.envisage_web,
+                dateKey: dateKey,
+                hasNewsItems: !!(result.envisage_web && dateKey && result.envisage_web[dateKey].newsItems),
+                newsItemsType: result.envisage_web && dateKey && result.envisage_web[dateKey] ? typeof result.envisage_web[dateKey].newsItems : 'undefined',
+                isArray: !!(result.envisage_web && dateKey && result.envisage_web[dateKey].newsItems && Array.isArray(result.envisage_web[dateKey].newsItems))
+              });
+            }
+          } else {
+            console.error(`❌ news-grid: Error fetching envisage_web - Status: ${response.status}`);
+            const errorText = await response.text();
+            console.error('❌ DEBUG - Error response text:', errorText);
+          }
+        } catch (error) {
+          console.error('❌ news-grid: Error loading news from envisage_web:', error);
+          
+          // Fallback to sample data BUT ensure they all have articleIds
+          allNewsItems = initialNewsItems.map(item => ({
+            ...item,
+            articleId: item.articleId || `sample-article-id-${item.id}`, // Ensure every sample item has an articleId
+          }));
+          
+          console.log('⚠️ news-grid: Using sample news items as fallback with articleIds:', 
+            allNewsItems.map(item => ({ id: item.id, articleId: item.articleId }))
+          );
+        }
+        
+        // Step 2: If user is logged in, check interaction history
+        if (userId) {
+          try {
+            console.log('👤 news-grid: Checking user interaction history');
+            const interactionsUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/${userId}/interactions`;
+            const interactionsResponse = await fetch(interactionsUrl);
+            
+            if (interactionsResponse.ok) {
+              const interactionsData = await interactionsResponse.json();
+              
+              // Extract IDs of completed (read) articles
+              readArticleIds = new Set(
+                interactionsData.interactions
+                  .filter((interaction: any) => interaction.completed)
+                  .map((interaction: any) => {
+                    // Handle both direct articleId and populated articleId object
+                    return typeof interaction.articleId === 'object' 
+                      ? interaction.articleId._id 
+                      : interaction.articleId;
+                  })
+              );
+              
+              console.log(`✅ news-grid: Found ${readArticleIds.size} read articles in user history`);
+            }
+          } catch (error) {
+            console.error('❌ news-grid: Error fetching user interactions:', error);
+          }
+        }
+        
+        // Step 3: Mark articles as read based on user history
+        const processedNewsItems = allNewsItems.map(item => ({
+          ...item,
+          isRead: item.articleId ? readArticleIds.has(item.articleId) : false
+        }));
+        
+        // Step 4: Sort items - unread first, read at the bottom
+        processedNewsItems.sort((a, b) => {
+          if (a.isRead === b.isRead) return 0;
+          return a.isRead ? 1 : -1;
+        });
+        
+        // Before setting state, verify no items have undefined articleIds
+        const itemsWithoutArticleId = processedNewsItems.filter(item => !item.articleId);
+        if (itemsWithoutArticleId.length > 0) {
+          console.error('❌ DEBUG - Some news items are missing articleId:', itemsWithoutArticleId);
+          
+          // Fix any items without articleId
+          processedNewsItems.forEach(item => {
+            if (!item.articleId) {
+              item.articleId = `emergency-fallback-id-${item.id}`;
+              console.log(`🔧 DEBUG - Applied emergency fallback articleId to item ${item.id}: ${item.articleId}`);
+            }
           });
         }
+        
+        console.log(`📊 news-grid: Final news list has ${processedNewsItems.length} items (${processedNewsItems.filter(i => i.isRead).length} read)`);
+        console.log('📋 DEBUG - Final news items with articleIds:', 
+          processedNewsItems.map(item => ({ id: item.id, title: item.title.substring(0, 20), articleId: item.articleId }))
+        );
+        
+        setNewsItems(processedNewsItems);
+        
       } catch (error) {
-        console.error('❌ news-grid: Failed to load Gemini news:', error);
+        console.error('❌ news-grid: Error in loadNewsAndCheckReadStatus:', error);
       }
     }
     
-    loadGeminiNews();
-  }, []);
+    loadNewsAndCheckReadStatus();
+  }, [userId]); // Re-run when userId changes (login/logout)
+
+  // Record article interaction in the database
+  const recordArticleInteraction = async (articleId: string, timeSpent: number, completed: boolean, lastPosition: number = 0) => {
+    if (!userId || !articleId) {
+      console.log(`⚠️ news-grid: Cannot record interaction - userId: ${!!userId}, articleId: ${!!articleId}`);
+      return;
+    }
+    
+    const requestData = {
+      articleId,
+      timeSpent,
+      completed,
+      lastPosition
+    };
+    
+    console.log(`📊 news-grid: Recording interaction for article ${articleId}:`, requestData);
+
+    try {
+      const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/${userId}/interactions`;
+      console.log(`🔄 news-grid: Sending POST request to ${url}`);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ news-grid: Recorded interaction for article ${articleId}:`, result);
+        return result;
+      } else {
+        const errorText = await response.text();
+        console.error(`❌ news-grid: Failed to record interaction - Status: ${response.status}`, errorText);
+      }
+    } catch (error) {
+      console.error('❌ news-grid: Error recording interaction:', error);
+    }
+  };
+
+  // Track time spent reading an article
+  const startTimeTracking = (id: number) => {
+    startTimeRef.current = Date.now();
+    console.log(`⏱️ news-grid: Started time tracking for article ID ${id} at ${new Date().toISOString()}`);
+    
+    // Initialize time spent for this article if needed
+    if (!timeSpentRef.current[id]) {
+      timeSpentRef.current[id] = 0;
+    }
+  };
+  
+  const stopTimeTracking = async (id: number, completed: boolean = false) => {
+    if (startTimeRef.current) {
+      const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000); // Convert to seconds
+      timeSpentRef.current[id] = (timeSpentRef.current[id] || 0) + timeSpent;
+      
+      console.log(`⏱️ news-grid: Stopped time tracking for article ID ${id}. Time spent: ${timeSpent}s, Total: ${timeSpentRef.current[id]}s, Completed: ${completed}`);
+      
+      const newsItem = newsItems.find(item => item.id === id);
+      if (newsItem?.articleId && userId) {
+        console.log(`📤 news-grid: Sending interaction data for article ID ${id} (${newsItem.articleId})`);
+        // Record the interaction with the time spent
+        await recordArticleInteraction(
+          newsItem.articleId,
+          timeSpent,
+          completed,
+          completed ? 100 : expandedCardRef.current?.scrollTop || 0
+        );
+      } else {
+        console.log(`⚠️ news-grid: Cannot send interaction - articleId: ${newsItem?.articleId}, userId: ${userId}`);
+      }
+      
+      startTimeRef.current = null;
+    } else {
+      console.log(`⚠️ news-grid: Cannot stop time tracking for article ID ${id} - no start time recorded`);
+    }
+  };
 
   // Listen for custom events from hero section
   useEffect(() => {
@@ -179,17 +439,133 @@ export default function NewsGrid() {
   };
 
   // Handle card click to expand
-  const handleCardClick = (id: number, e: React.MouseEvent) => {
+  const handleCardClick = async (id: number, e: React.MouseEvent) => {
     e.preventDefault() // Prevent navigation
+    
+    // Debug newsItem to diagnose articleId issue
+    const newsItem = newsItems.find(item => item.id === id);
+    console.log(`🔍 DEBUG - Article being opened:`, {
+      id: id,
+      title: newsItem?.title,
+      articleId: newsItem?.articleId,
+      userId: userId
+    });
+
+    // If the articleId is undefined, try to fix it immediately
+    if (newsItem && !newsItem.articleId) {
+      console.warn(`⚠️ DEBUG - Article ${id} is missing articleId, applying emergency fix`);
+      
+      // Create a fixed copy of the news items with a fallback articleId
+      const updatedNewsItems = newsItems.map(item => 
+        item.id === id 
+          ? { ...item, articleId: `emergency-fix-id-${id}` } 
+          : item
+      );
+      
+      // Update the state with the fixed items
+      setNewsItems(updatedNewsItems);
+      
+      // Get the updated item with the emergency articleId
+      const fixedItem = updatedNewsItems.find(item => item.id === id);
+      console.log(`🔧 DEBUG - Applied emergency articleId fix:`, {
+        id: id,
+        articleId: fixedItem?.articleId
+      });
+      
+      // Use the fixed item for the rest of this function
+      newsItem.articleId = fixedItem?.articleId;
+    }
 
     if (expandedCardId === id) {
       // If clicking the already expanded card, do nothing
       return
     }
+    
+    // If there was a previously expanded card, stop tracking time for it
+    if (expandedCardId !== null) {
+      console.log(`📌 news-grid: Closing previous article ID ${expandedCardId} before opening new one`);
+      await stopTimeTracking(expandedCardId);
+    }
 
     setExpandedCardId(id)
+    console.log(`📌 news-grid: Opening article ID ${id}`);
+    
+    // Start tracking time for the newly expanded card
+    startTimeTracking(id);
+    
+    // Record the view if user is logged in
+    if (newsItem?.articleId && userId) {
+      try {
+        // Increment view count for the envisage_web item
+        const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/envisage_web/view`;
+        console.log(`👁️ news-grid: Sending view increment request to ${url} for article ID ${id} (${newsItem.articleId})`);
+        
+        // The articleId format is already 'documentId_newsItemId'
+        // We'll let the server parse it correctly
+        const viewData = {
+          articleId: newsItem.articleId,
+          // No need to split here as the server will do it
+          newsItemId: id // Send the numerical ID as backup
+        };
+        
+        console.log(`👁️ news-grid: View request data:`, viewData);
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(viewData),
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`✅ news-grid: Successfully incremented view count:`, result);
+          // Update local view count
+          setNewsItems(prevItems => 
+            prevItems.map(item => 
+              item.id === id ? { ...item, views: item.views + 1 } : item
+            )
+          );
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ news-grid: Error incrementing view count - Status: ${response.status}`, errorText);
+          
+          // Still increment local view count for better UX even if API call fails
+          // This ensures the UI is responsive even when the backend has issues
+          console.log(`⚠️ news-grid: Incrementing local view count despite API error`);
+          setNewsItems(prevItems => 
+            prevItems.map(item => 
+              item.id === id ? { ...item, views: item.views + 1 } : item
+            )
+          );
+          
+          // If it's a 404 error, we should log this specially for debugging
+          if (response.status === 404) {
+            console.log(`⚠️ news-grid: API endpoint not found or news item doesn't exist in database. This may be expected for sample data.`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ news-grid: Error incrementing view count:', error);
+        
+        // Still increment local view count for better UX even if network error occurs
+        console.log(`⚠️ news-grid: Incrementing local view count despite network error`);
+        setNewsItems(prevItems => 
+          prevItems.map(item => 
+            item.id === id ? { ...item, views: item.views + 1 } : item
+          )
+        );
+      }
+    } else {
+      console.log(`⚠️ news-grid: Cannot record view - articleId: ${newsItem?.articleId}, userId: ${userId}`);
+      
+      // Increment local view count anyway for consistency
+      setNewsItems(prevItems => 
+        prevItems.map(item => 
+          item.id === id ? { ...item, views: item.views + 1 } : item
+        )
+      );
+    }
 
-    // Start a timer to track reading time (10 seconds for demo purposes)
+    // Start a timer to track reading time
     if (readTimerRef.current) {
       clearTimeout(readTimerRef.current)
     }
@@ -201,7 +577,7 @@ export default function NewsGrid() {
         const isScrolledToBottom = card.scrollHeight - card.scrollTop <= card.clientHeight + 50 // Within 50px of bottom
 
         if (isScrolledToBottom) {
-          markAsRead(id)
+          markAsRead(id, true) // true indicates completion
         }
       }
     }, 5000) // 5 seconds for demo purposes
@@ -209,47 +585,111 @@ export default function NewsGrid() {
 
   // Handle scroll within expanded card to detect if user reached the bottom
   const handleCardScroll = () => {
-    if (!expandedCardId || !expandedCardRef.current) return
+    if (!expandedCardId || !expandedCardRef.current) return;
 
-    const card = expandedCardRef.current
-    const isScrolledToBottom = card.scrollHeight - card.scrollTop <= card.clientHeight + 50 // Within 50px of bottom
-
-    if (isScrolledToBottom) {
-      markAsRead(expandedCardId)
+    // Debounce scroll events
+    if (scrollDebounceTimerRef.current) {
+      clearTimeout(scrollDebounceTimerRef.current);
     }
-  }
+
+    scrollDebounceTimerRef.current = setTimeout(() => {
+      const card = expandedCardRef.current;
+      if (!card) return;
+      
+      const isScrolledToBottom = card.scrollHeight - card.scrollTop <= card.clientHeight + 50; // Within 50px of bottom
+
+      if (isScrolledToBottom && expandedCardId) {
+        markAsRead(expandedCardId, true); // true indicates completion
+      }
+    }, 200); // 200ms debounce
+  };
 
   // Mark a card as read and reorder the list
-  const markAsRead = (id: number) => {
-    setNewsItems((prevItems) => {
+  const markAsRead = async (id: number, completed: boolean = false) => {
+    // Skip if already marked as read or already being processed
+    const newsItem = newsItems.find(item => item.id === id);
+    if (!newsItem || newsItem.isRead || processingMarkAsReadRef.current.has(id)) {
+      console.log(`⚠️ news-grid: Skipping markAsRead - Article ID ${id}, already read: ${newsItem?.isRead}, already processing: ${processingMarkAsReadRef.current.has(id)}`);
+      return;
+    }
+    
+    // Add to processing set to prevent duplicate calls
+    processingMarkAsReadRef.current.add(id);
+    
+    console.log(`📚 news-grid: Marking article ID ${id} as read, completed: ${completed}`);
+    
+    // Record completion if user scrolled to bottom and is logged in
+    if (completed && newsItem.articleId && userId) {
+      console.log(`📚 news-grid: Article ID ${id} completed, recording final stats`);
+      await stopTimeTracking(id, true);
+    }
+    
+    // Update UI to mark as read and move to the bottom
+    setNewsItems(prevItems => {
       // Create a new array with the target item marked as read
-      const updatedItems = prevItems.map((item) => (item.id === id ? { ...item, isRead: true } : item))
+      const updatedItems = prevItems.map(item => 
+        item.id === id ? { ...item, isRead: true } : item
+      );
 
-      // Sort the array to push read items to the bottom
+      // Sort to move read items to the bottom
       return updatedItems.sort((a, b) => {
-        if (a.isRead === b.isRead) return 0
-        return a.isRead ? 1 : -1
-      })
-    })
-  }
+        if (a.isRead === b.isRead) return 0;
+        return a.isRead ? 1 : -1;
+      });
+    });
+    
+    console.log(`✅ news-grid: Marked article ${id} as read`);
+    
+    // Remove from processing set now that we're done
+    processingMarkAsReadRef.current.delete(id);
+  };
 
   // Close expanded card
-  const closeExpandedCard = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setExpandedCardId(null)
-    if (readTimerRef.current) {
-      clearTimeout(readTimerRef.current)
+  const closeExpandedCard = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (expandedCardId !== null) {
+      console.log(`📌 news-grid: Closing article ID ${expandedCardId}`);
+      
+      // Prevent redundant processing if already marked as read
+      const newsItem = newsItems.find(item => item.id === expandedCardId);
+      if (!newsItem?.isRead) {
+        // Stop tracking time when card is closed
+        await stopTimeTracking(expandedCardId);
+      }
     }
-  }
+    
+    setExpandedCardId(null);
+    
+    if (readTimerRef.current) {
+      clearTimeout(readTimerRef.current);
+    }
+    
+    if (scrollDebounceTimerRef.current) {
+      clearTimeout(scrollDebounceTimerRef.current);
+    }
+  };
 
   // Clean up timer on unmount
   useEffect(() => {
     return () => {
       if (readTimerRef.current) {
-        clearTimeout(readTimerRef.current)
+        clearTimeout(readTimerRef.current);
       }
-    }
-  }, [])
+      
+      if (scrollDebounceTimerRef.current) {
+        clearTimeout(scrollDebounceTimerRef.current);
+      }
+      
+      // Record final time spent if card is still open when component unmounts
+      if (expandedCardId !== null) {
+        const newsItem = newsItems.find(item => item.id === expandedCardId);
+        if (newsItem && !newsItem.isRead && !processingMarkAsReadRef.current.has(expandedCardId)) {
+          stopTimeTracking(expandedCardId);
+        }
+      }
+    };
+  }, [expandedCardId, newsItems]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative">
@@ -278,6 +718,13 @@ export default function NewsGrid() {
                     </Badge>
                   </div>
 
+                  {/* Article and source count badge - new feature */}
+                  {news.articleCount && news.sourceCount && (
+                    <div className="absolute top-3 right-3 bg-background/80 text-foreground text-xs px-2 py-1 rounded">
+                      {news.articleCount} Articles • {news.sourceCount}
+                    </div>
+                  )}
+
                   {/* Views indicator - visible only when not hovered */}
                   {hoveredCardId !== news.id && (
                     <div className="absolute bottom-3 right-3 bg-black/70 text-white text-xs px-2 py-1 rounded-full flex items-center">
@@ -288,7 +735,7 @@ export default function NewsGrid() {
 
                   {/* Read indicator */}
                   {news.isRead && (
-                    <div className="absolute top-3 right-3 bg-muted text-muted-foreground text-xs px-2 py-1 rounded">
+                    <div className="absolute top-12 right-3 bg-muted text-muted-foreground text-xs px-2 py-1 rounded">
                       Read
                     </div>
                   )}

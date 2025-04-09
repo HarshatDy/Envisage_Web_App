@@ -29,20 +29,20 @@ export default async function handler(req, res) {
     // Query for documents with Summary field and the specific date
     const document = await collection.findOne({
       'Summary': { $exists: true },
-      'Summary.2025-04-05_06:00': { $exists: true }
+      'Summary.2025-04-06_18:00': { $exists: true }
     });
     
-    if (!document || !document.Summary || !document.Summary['2025-04-05_06:00']) {
+    if (!document || !document.Summary || !document.Summary['2025-04-06_18:00']) {
       console.log('❌ API: No matching document found with required summary data');
       return res.status(404).json({ error: 'No matching document found' });
     }
     
-    console.log('✅ API: Found document with Summary["2025-04-05_06:00"]');
+    console.log('✅ API: Found document with Summary["2025-04-06_18:00"]');
     
     // Return only the summary data
     return res.status(200).json({ 
-      summary: document.Summary['2025-04-05_06:00'],
-      date: '2025-04-05_06:00'
+      summary: document.Summary['2025-04-06_18:00'],
+      date: '2025-04-06_18:00'
     });
     
   } catch (error) {

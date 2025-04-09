@@ -1,0 +1,68 @@
+# MongoDB Database Schema
+
+## User Collection (users)
+- email: String [required, unique, trimmed, lowercase]
+- password: String [optional - only for email login users]
+- name: String [required, trimmed]
+- profilePicture: String [default: '/images/default-avatar.png']
+- authProvider: String [enum: 'email', 'google', required]
+- googleId: String [optional - only for Google sign-in users]
+- isActive: Boolean [default: true]
+- createdAt: Date [default: current timestamp]
+- lastLogin: Date [default: current timestamp]
+- timestamps: true [automatically adds createdAt and updatedAt]
+
+Indexes:
+- Compound index on {email: 1, authProvider: 1}
+
+## User Statistics Collection (user_stats)
+- userId: ObjectId [ref: 'User', required, indexed]
+- totalTimeSpent: Number [in seconds, default: 0]
+- cardReadingTime: Number [in seconds, default: 0]
+- articlesRead: Number [default: 0]
+- lastActivity: Date [default: current timestamp]
+- dailyStats: Array of {
+  - date: Date [required]
+  - timeSpent: Number [in seconds, default: 0]
+  - articlesRead: Number [default: 0]
+}
+- categoryEngagement: Map of {
+  - key: category name
+  - value: {
+    - timeSpent: Number [in seconds]
+    - articlesRead: Number
+  }
+}
+- timestamps: true
+
+## Article Collection (articles)
+- title: String [required, trimmed]
+- content: String [required]
+- summary: String [trimmed]
+- category: String [required, indexed]
+- dayTimeCategory: String [enum: 'morning', 'afternoon', 'evening', 'night', required, indexed]
+- author: ObjectId [ref: 'User']
+- publishDate: Date [default: current timestamp, indexed]
+- viewCount: Number [default: 0]
+- totalTimeSpent: Number [in seconds, default: 0]
+- averageReadTime: Number [in seconds, default: 0]
+- tags: Array of String [trimmed]
+- isActive: Boolean [default: true]
+- timestamps: true [automatically adds createdAt and updatedAt]
+
+Indexes:
+- Compound index on {category: 1, dayTimeCategory: 1}
+- Compound index on {dayTimeCategory: 1, viewCount: -1}
+
+## User Article Interaction Collection (user_article_interactions)
+- userId: ObjectId [ref: 'User', required]
+- articleId: ObjectId [ref: 'Article', required]
+- timeSpent: Number [in seconds, default: 0]
+- completed: Boolean [default: false]
+- interactionDate: Date [default: current timestamp]
+- lastPosition: Number [to resume reading, default: 0]
+- timestamps: true [automatically adds createdAt and updatedAt]
+
+Indexes:
+- Compound unique index on {userId: 1, articleId: 1}
+- Compound index on {userId: 1, interactionDate: -1}

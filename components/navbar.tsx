@@ -3,12 +3,21 @@
 import type React from "react"
 
 import { useState } from "react"
+import Image from "next/image"
 import Link from "next/link"
-import { Search, Menu, X, ChevronDown } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Search, Menu, X, ChevronDown, User, LogOut, Settings } from "lucide-react"
+import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger,
+  DropdownMenuSeparator 
+} from "@/components/ui/dropdown-menu"
 
 const categories = [
   { name: "Politics", href: "/category/politics" },
@@ -21,6 +30,8 @@ const categories = [
 ]
 
 export default function Navbar() {
+  const router = useRouter()
+  const { data: session, status } = useSession()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -29,6 +40,25 @@ export default function Navbar() {
     // Handle search functionality
     console.log("Searching for:", searchQuery)
   }
+
+  const handleSignOut = async () => {
+    await signOut({ redirect: false })
+    router.push("/")
+  }
+
+  // Helper function to get a safe image URL
+  const getProfileImageUrl = () => {
+    if (!session?.user?.image) return null
+    
+    // If the image is a relative path, make it absolute
+    if (session.user.image.startsWith('/')) {
+      return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${session.user.image}`
+    }
+    
+    return session.user.image
+  }
+
+  const profileImageUrl = getProfileImageUrl()
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -77,7 +107,7 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* Right section - Search, Theme, Login */}
+        {/* Right section - Search, Theme, Login/Profile */}
         <div className="flex items-center space-x-4">
           <form onSubmit={handleSearch} className="hidden md:flex w-full max-w-sm items-center space-x-2">
             <Input
@@ -93,9 +123,71 @@ export default function Navbar() {
             </Button>
           </form>
           <ThemeToggle />
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/login">Login</Link>
-          </Button>
+          
+          {status === "authenticated" && session ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full overflow-hidden">
+                  {profileImageUrl ? (
+                    <Image 
+                      src={profileImageUrl} 
+                      alt={session.user?.name || "Profile"} 
+                      width={32} 
+                      height={32} 
+                      className="rounded-full h-8 w-8 object-cover"
+                      unoptimized={!profileImageUrl.startsWith('http')}
+                    />
+                  ) : (
+                    <User className="h-5 w-5" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="flex items-center justify-start gap-2 p-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full overflow-hidden">
+                    {profileImageUrl ? (
+                      <Image 
+                        src={profileImageUrl} 
+                        alt={session.user?.name || "Profile"} 
+                        width={32} 
+                        height={32} 
+                        className="h-8 w-8 object-cover"
+                        unoptimized={!profileImageUrl.startsWith('http')}
+                      />
+                    ) : (
+                      <User className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="text-sm">
+                    <p className="font-medium">{session.user?.name}</p>
+                    <p className="text-muted-foreground text-xs">{session.user?.email}</p>
+                  </div>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profile" className="cursor-pointer flex w-full">
+                    <User className="mr-2 h-4 w-4" />
+                    <span>Profile</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="cursor-pointer flex w-full">
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Settings</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/login">Login</Link>
+            </Button>
+          )}
         </div>
       </div>
 

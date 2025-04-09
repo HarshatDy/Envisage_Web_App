@@ -2,20 +2,20 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export async function getNewsFromGemini() {
-  console.log('🔄 news_item_creator: Initiating fetch from Gemini API');
+  //console.log('🔄 news_item_creator: Initiating fetch from Gemini API');
   try {
-    console.log(`📡 news_item_creator: Fetching from ${API_URL}/api/gemini-document`);
+    //console.log(`📡 news_item_creator: Fetching from ${API_URL}/api/gemini-document`);
     const response = await fetch(`${API_URL}/api/gemini-document`);
     const data = await response.json();
     
-    console.log('📊 news_item_creator: Received data structure:', JSON.stringify(data, null, 2));
+    //console.log('📊 news_item_creator: Received data structure:', JSON.stringify(data, null, 2));
     
     if (!data || !data.summary) {
-      console.log('❌ news_item_creator: No summary data found in response');
+      //console.log('❌ news_item_creator: No summary data found in response');
       return [];
     }
     
-    console.log('✅ news_item_creator: Successfully received Gemini data');
+    //console.log('✅ news_item_creator: Successfully received Gemini data');
     
     // Process data based on the specific structure we know we're receiving
     return processGeminiData(data.summary);
@@ -26,7 +26,7 @@ export async function getNewsFromGemini() {
 }
 
 function processGeminiData(summaryData) {
-  console.log('🔄 news_item_creator: Processing Gemini data structure');
+  //console.log('🔄 news_item_creator: Processing Gemini data structure');
   const newsItems = [];
   let id = Date.now();
   
@@ -34,7 +34,7 @@ function processGeminiData(summaryData) {
   const dateKeys = Object.keys(summaryData).filter(key => key.includes('-'));
   
   if (dateKeys.length > 0) {
-    console.log(`🔍 news_item_creator: Found date-based entries: ${dateKeys.join(', ')}`);
+    //console.log(`🔍 news_item_creator: Found date-based entries: ${dateKeys.join(', ')}`);
     
     // Process each date entry
     for (const dateKey of dateKeys) {
@@ -42,7 +42,7 @@ function processGeminiData(summaryData) {
       
       // Check if there's an overall introduction to use as a general news item
       if (dateData.overall_introduction && dateData.overall_introduction.length > 100) {
-        console.log('✨ news_item_creator: Creating news item from overall introduction');
+        //console.log('✨ news_item_creator: Creating news item from overall introduction');
         
         newsItems.push({
           id: id++,
@@ -59,11 +59,11 @@ function processGeminiData(summaryData) {
       
       // Process categories if they exist
       if (dateData.categories && typeof dateData.categories === 'object') {
-        console.log(`📂 news_item_creator: Processing ${Object.keys(dateData.categories).length} categories`);
+        //console.log(`📂 news_item_creator: Processing ${Object.keys(dateData.categories).length} categories`);
         
         Object.entries(dateData.categories).forEach(([categoryName, categoryData]) => {
           if (!categoryData || !categoryData.summary || categoryData.summary.length < 100) {
-            console.log(`⚠️ news_item_creator: Skipping category ${categoryName} - insufficient content`);
+            //console.log(`⚠️ news_item_creator: Skipping category ${categoryName} - insufficient content`);
             return;
           }
           
@@ -78,7 +78,7 @@ function processGeminiData(summaryData) {
             shortSummary = paragraphMatch[1].replace(/^#+\s+/, ''); // Remove markdown headings
           }
           
-          console.log(`✨ news_item_creator: Created news item for category: ${categoryName}`);
+          //console.log(`✨ news_item_creator: Created news item for category: ${categoryName}`);
           
           newsItems.push({
             id: id++,
@@ -98,11 +98,11 @@ function processGeminiData(summaryData) {
     }
   } else {
     // Fallback for other structures
-    console.log('🔍 news_item_creator: No date-based structure found, attempting to process as categories');
+    //console.log('🔍 news_item_creator: No date-based structure found, attempting to process as categories');
     
     Object.entries(summaryData).forEach(([key, value]) => {
       if (typeof value === 'object' && value.summary) {
-        console.log(`✨ news_item_creator: Processing category: ${key}`);
+        //console.log(`✨ news_item_creator: Processing category: ${key}`);
         
         const title = value.title || `Latest in ${key}`;
         const cleanTitle = title.replace(/\*\*/g, '').replace(/\[|\]/g, '');
@@ -124,14 +124,14 @@ function processGeminiData(summaryData) {
     });
   }
   
-  console.log(`📦 news_item_creator: Generated ${newsItems.length} news items`);
+  //console.log(`📦 news_item_creator: Generated ${newsItems.length} news items`);
   return newsItems;
 }
 
-// Helper function to format date strings like "2025-04-05_06:00" to "April 5, 2025"
+// Helper function to format date strings like "2025-04-06_18:00" to "April 5, 2025"
 function formatDate(dateString) {
   try {
-    // Extract date parts from the string format (e.g., "2025-04-05_06:00")
+    // Extract date parts from the string format (e.g., "2025-04-06_18:00")
     const [datePart, timePart] = dateString.split('_');
     const [year, month, day] = datePart.split('-').map(Number);
     
@@ -149,16 +149,16 @@ function formatDate(dateString) {
 }
 
 export function getRandomNewsForHero(newsItems, count = 5) {
-  console.log('🔄 news_item_creator: Selecting random news for hero section');
+  //console.log('🔄 news_item_creator: Selecting random news for hero section');
   
   if (!newsItems || newsItems.length === 0) {
-    console.log('⚠️ news_item_creator: No news items available to select from');
+    //console.log('⚠️ news_item_creator: No news items available to select from');
     return [];
   }
   
   // If we have fewer items than requested, return all of them
   if (newsItems.length <= count) {
-    console.log(`📊 news_item_creator: Only ${newsItems.length} items available, returning all`);
+    //console.log(`📊 news_item_creator: Only ${newsItems.length} items available, returning all`);
     return formatNewsForHero(newsItems);
   }
   
@@ -172,7 +172,7 @@ export function getRandomNewsForHero(newsItems, count = 5) {
     selectedItems.push(itemsCopy.splice(randomIndex, 1)[0]);
   }
   
-  console.log(`✅ news_item_creator: Selected ${selectedItems.length} random news items for hero`);
+  //console.log(`✅ news_item_creator: Selected ${selectedItems.length} random news items for hero`);
   return formatNewsForHero(selectedItems);
 }
 

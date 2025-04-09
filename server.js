@@ -35,14 +35,14 @@ app.get('/api/gemini-document', async (req, res) => {
     
     // Look for the specific date in the Summary field
     for (const doc of documents) {
-      if (doc.Summary && doc.Summary['2025-04-05_06:00']) {
-        const summaryValue = doc.Summary['2025-04-05_06:00'];
-        return res.json({ summary: summaryValue, date: '2025-04-05_06:00' });
+      if (doc.Summary && doc.Summary['2025-04-06_18:00']) {
+        const summaryValue = doc.Summary['2025-04-06_18:00'];
+        return res.json({ summary: summaryValue, date: '2025-04-06_18:00' });
       }
     }
     
     return res.status(404).json({
-      message: 'No document contains Summary["2025-04-05_06:00"]',
+      message: 'No document contains Summary["2025-04-06_18:00"]',
       availableDates: documents[0].Summary ? Object.keys(documents[0].Summary) : []
     });
   } catch (error) {

@@ -1,3 +1,6 @@
+"use client"
+
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -5,38 +8,24 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { TrendingUp, TrendingDown, Minus, ArrowRight } from "lucide-react"
 
-// Sample trending topics
-const trendingTopics = [
-  "Climate Change",
-  "Artificial Intelligence",
-  "Global Economy",
-  "Space Exploration",
-  "Public Health",
-]
+// Initialize with empty arrays instead of dummy data
+const initialTrendingTopics: string[] = []
+const initialPopularNews: { id: number; title: string; slug: string }[] = []
 
-// Sample popular news
-const popularNews = [
-  {
-    id: 1,
-    title: "Scientists Discover Potential New Treatment for Common Disease",
-    slug: "new-disease-treatment",
-  },
-  {
-    id: 2,
-    title: "Historic Peace Agreement Signed After Decades of Conflict",
-    slug: "peace-agreement-signed",
-  },
-  {
-    id: 3,
-    title: "Tech Innovation Could Revolutionize Renewable Energy Production",
-    slug: "tech-renewable-energy",
-  },
-  {
-    id: 4,
-    title: "Major Cultural Festival Returns After Three-Year Hiatus",
-    slug: "cultural-festival-returns",
-  },
-]
+// Add interface for NewsItem to properly type the items
+interface NewsItem {
+  id: number;
+  title: string;
+  summary?: string;
+  image?: string;
+  category: string;
+  date?: string;
+  slug: string;
+  views: number;
+  isRead?: boolean;
+  articleCount?: number;
+  sourceCount?: number;
+}
 
 // Sample stock recommendations
 const stockRecommendations = [
@@ -83,6 +72,163 @@ const stockRecommendations = [
 ]
 
 export default function Sidebar() {
+  const [trendingTopics, setTrendingTopics] = useState(initialTrendingTopics)
+  const [popularNews, setPopularNews] = useState(initialPopularNews)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchTopNewsAndTopics = async () => {
+      try {
+        setIsLoading(true)
+        console.log("Sidebar: Starting to fetch news and topics")
+        
+        // Get current time period based on the rules:
+        // - 6am to 6pm: Use current day YYYY-MM-DD_06:00
+        // - 6pm to 6am next day: Use current day YYYY-MM-DD_18:00
+        const now = new Date()
+        const hours = now.getHours()
+        
+        // Create date object for the target period
+        let targetDate = new Date(now)
+        let hourKey = "06:00"
+        
+        if (hours >= 6 && hours < 18) {
+          // Morning/afternoon period (6am-6pm): Use current day 06:00
+          targetDate.setHours(6, 0, 0, 0)
+          hourKey = "06:00"
+        } else {
+          // Evening/night period (6pm-6am): Use previous/current day 18:00
+          if (hours < 6) {
+            // After midnight but before 6am - use previous day's 18:00
+            targetDate.setDate(targetDate.getDate() - 1)
+          }
+          targetDate.setHours(18, 0, 0, 0)
+          hourKey = "18:00"
+        }
+        
+        // Format the date key as YYYY-MM-DD_HH:00
+        const year = targetDate.getFullYear()
+        const month = String(targetDate.getMonth() + 1).padStart(2, '0')
+        const day = String(targetDate.getDate()).padStart(2, '0')
+        // const dateKey = `${year}-${month}-${day}_${hourKey}`
+        const dateKey = "2025-04-06_18:00"
+
+        
+        // Use hardcoded date key for testing that matches the database structure
+        const testDateKey = "2025-04-06_18:00"
+        
+        console.log("Sidebar: Using date key:", dateKey)
+        
+        // Using the same fetch pattern as in news-grid.tsx
+        try {
+          // Fetch news items from envisage_web collection
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/envisage_web`);
+          if (response.ok) {
+            const result = await response.json();
+            console.log(`Sidebar: Loaded envisage_web data`);
+            
+            // Get the date key from the result or use the test key
+            const actualDateKey = result.envisage_web ? Object.keys(result.envisage_web)[0] : testDateKey;
+            console.log("Sidebar: Using actual date key from data:", actualDateKey);
+
+            // Check if the data contains newsItems array
+            if (actualDateKey && result.envisage_web && 
+                result.envisage_web[actualDateKey] && 
+                result.envisage_web[actualDateKey].newsItems && 
+                Array.isArray(result.envisage_web[actualDateKey].newsItems)) {
+              
+              // Get the news items array from the nested structure and cast to NewsItem[]
+              const newsItems: NewsItem[] = result.envisage_web[actualDateKey].newsItems
+              console.log("Sidebar: Found newsItems array with", newsItems.length, "items")
+              
+              // Process news items for popularity
+              // Sort by views (descending) to get the most popular first
+              const sortedItems = [...newsItems].sort((a, b) => (b.views || 0) - (a.views || 0))
+              
+              // Take the top 4 most viewed
+              const topItems = sortedItems.slice(0, 4)
+              
+              // Format for the popular news section
+              const formattedPopularNews = topItems.map((item: NewsItem) => ({
+                id: item.id,
+                title: item.title,
+                slug: item.slug,
+              }))
+              console.log("Sidebar: Formatted popular news:", formattedPopularNews)
+              
+              // Extract categories from all news items
+              const allCategories = newsItems
+                .map((item: NewsItem) => item.category)
+                .filter(Boolean)
+              
+              console.log("Sidebar: All categories extracted:", allCategories)
+              
+              // Count occurrences of each category
+              const categoryCount: Record<string, number> = {}
+              allCategories.forEach((category: string) => {
+                categoryCount[category] = (categoryCount[category] || 0) + 1
+              })
+              
+              console.log("Sidebar: Category counts:", categoryCount)
+              
+              // Sort by count and get the top 5 trending topics
+              const topCategories = Object.keys(categoryCount)
+                .sort((a, b) => categoryCount[b] - categoryCount[a])
+                .slice(0, 5)
+              
+              console.log("Sidebar: Top categories:", topCategories)
+              
+              // Update state with the fetched data
+              if (formattedPopularNews.length > 0) {
+                setPopularNews(formattedPopularNews)
+                console.log("Sidebar: Updated popular news state")
+              } else {
+                console.log("Sidebar: No popular news to update")
+              }
+              
+              if (topCategories.length > 0) {
+                setTrendingTopics(topCategories)
+                console.log("Sidebar: Updated trending topics state")
+              } else {
+                console.log("Sidebar: No trending topics to update")
+              }
+            } else {
+              console.log("Sidebar: Could not find news items in the expected structure")
+              console.log("Sidebar: Data structure received:", {
+                hasEnvisageWeb: !!result.envisageWeb,
+                dateKey: actualDateKey,
+                hasNewsItems: !!(result.envisage_web && actualDateKey && result.envisage_web[actualDateKey]?.newsItems)
+              })
+            }
+          } else {
+            console.error(`Sidebar: Error fetching envisage_web - Status: ${response.status}`)
+            const errorText = await response.text()
+            console.error('Sidebar: Error response text:', errorText)
+          }
+        } catch (error) {
+          console.error('Sidebar: Error loading news from envisage_web:', error)
+        }
+      } catch (error) {
+        console.error("Sidebar: Error fetching popular news and topics:", error)
+        // Leave state with initial empty arrays
+      } finally {
+        setIsLoading(false)
+        console.log("Sidebar: Finished loading data")
+      }
+    }
+    
+    fetchTopNewsAndTopics()
+    
+    // Refresh data every 15 minutes
+    const intervalId = setInterval(fetchTopNewsAndTopics, 15 * 60 * 1000)
+    console.log("Sidebar: Set up refresh interval")
+    
+    return () => {
+      clearInterval(intervalId)
+      console.log("Sidebar: Cleared refresh interval")
+    }
+  }, [])
+
   return (
     <div className="space-y-6">
       {/* Stock Recommendations */}
@@ -144,15 +290,23 @@ export default function Sidebar() {
           <CardTitle>Trending Topics</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {trendingTopics.map((topic) => (
-              <Link key={topic} href={`/search?q=${encodeURIComponent(topic)}`}>
-                <Button variant="outline" size="sm">
-                  {topic}
-                </Button>
-              </Link>
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="flex flex-wrap gap-2">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-8 w-24 bg-muted animate-pulse rounded-md" />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {trendingTopics.map((topic) => (
+                <Link key={topic} href={`/search?q=${encodeURIComponent(topic)}`}>
+                  <Button variant="outline" size="sm">
+                    {topic}
+                  </Button>
+                </Link>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -162,19 +316,33 @@ export default function Sidebar() {
           <CardTitle>Most Read</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {popularNews.map((news, index) => (
-              <div key={news.id}>
-                <div className="flex items-start gap-2">
-                  <span className="font-bold text-lg text-muted-foreground">{index + 1}</span>
-                  <Link href={`/news/${news.slug}`} className="hover:text-primary transition-colors">
-                    <h4 className="font-medium">{news.title}</h4>
-                  </Link>
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i}>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-lg text-muted-foreground">{i}</span>
+                    <div className="h-5 bg-muted animate-pulse rounded w-full" />
+                  </div>
+                  {i < 4 && <Separator className="mt-4" />}
                 </div>
-                {index < popularNews.length - 1 && <Separator className="mt-4" />}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {popularNews.map((news, index) => (
+                <div key={news.id}>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-lg text-muted-foreground">{index + 1}</span>
+                    <Link href={`/news/${news.slug}`} className="hover:text-primary transition-colors">
+                      <h4 className="font-medium">{news.title}</h4>
+                    </Link>
+                  </div>
+                  {index < popularNews.length - 1 && <Separator className="mt-4" />}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

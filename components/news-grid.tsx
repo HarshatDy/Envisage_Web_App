@@ -879,7 +879,7 @@ const markAsRead = async (id: number, completed: boolean = false) => {
                     className="object-cover transition-transform duration-300 hover:scale-105"
                   />
                   <div className="absolute top-3 left-3">
-                    <Badge variant="outline" className="bg-primary/90 text-primary-foreground border-none">
+                    <Badge variant="outline" className="bg-[#3B82F6]/90 text-white border-none">
                       {news.category}
                     </Badge>
                   </div>
@@ -940,7 +940,7 @@ const markAsRead = async (id: number, completed: boolean = false) => {
                     <X className="h-5 w-5" />
                   </Button>
                   <div className="absolute bottom-4 left-4">
-                    <Badge variant="outline" className="bg-primary/90 text-primary-foreground border-none">
+                    <Badge variant="outline" className="bg-[#3B82F6]/90 text-white border-none">
                       {news.category}
                     </Badge>
                   </div>
@@ -948,7 +948,7 @@ const markAsRead = async (id: number, completed: boolean = false) => {
 
                 <div className="p-6">
                   <h2 className="text-2xl font-bold mb-2">{news.title}</h2>
-                  <div className="w-full h-0.5 bg-primary my-4"></div>
+                  <div className="w-full h-0.5 bg-[#3B82F6] my-4"></div>
                   <div className="flex justify-between text-sm text-muted-foreground mb-4">
                     <span>{news.date}</span>
                     <div className="flex items-center">

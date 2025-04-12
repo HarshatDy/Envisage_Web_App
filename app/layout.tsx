@@ -10,7 +10,7 @@ import SessionWrapper from "@/components/session-wrapper"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "NewsHub",
+  title: "Envisage",
   description: "Stay informed with the latest news and updates",
 }
 
@@ -21,6 +21,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Bungee+Spice&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200..900&display=swap" rel="stylesheet" />
+      </head>
       <body className={inter.className}>
         <SessionWrapper>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>

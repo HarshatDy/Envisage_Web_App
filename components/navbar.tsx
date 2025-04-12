@@ -18,6 +18,12 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator 
 } from "@/components/ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 const categories = [
   { name: "Politics", href: "/category/politics" },
@@ -62,7 +68,7 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between">
+      <div className="container flex h-16 items-center justify-between" style={{ fontFamily: "'Unbounded', sans-serif" }}>
         {/* Mobile menu button */}
         <div className="md:hidden">
           <button
@@ -74,54 +80,38 @@ export default function Navbar() {
           </button>
         </div>
 
-        {/* Left section - Categories dropdown and Home */}
+        {/* Left section - Simple Home link */}
         <div className="hidden md:flex items-center space-x-4">
           <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
             Home
-          </Link>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="flex items-center gap-1 h-9 px-3">
-                Categories <ChevronDown className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              {categories.map((category) => (
-                <DropdownMenuItem key={category.name} asChild>
-                  <Link href={category.href}>{category.name}</Link>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <Link href="/trending" className="text-sm font-medium transition-colors hover:text-primary">
-            Trending
           </Link>
         </div>
 
         {/* Center - Logo */}
         <div className="absolute left-1/2 transform -translate-x-1/2">
           <Link href="/" className="flex items-center space-x-2">
-            <span className="text-2xl font-bold">NewsHub</span>
+            <TooltipProvider>
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <span className="text-2xl font-bold">Envisage</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="italic">"Too much info? We simplify the world's news for you."</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </Link>
         </div>
 
-        {/* Right section - Search, Theme, Login/Profile */}
+        {/* Right section - Creator Link, Theme, Login/Profile */}
         <div className="flex items-center space-x-4">
-          <form onSubmit={handleSearch} className="hidden md:flex w-full max-w-sm items-center space-x-2">
-            <Input
-              type="search"
-              placeholder="Search news..."
-              className="w-full"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <Button type="submit" size="icon" variant="ghost">
-              <Search className="h-4 w-4" />
-              <span className="sr-only">Search</span>
-            </Button>
-          </form>
+          <Link 
+            href="/creator" 
+            className="hidden md:block hover:text-primary transition-colors"
+            style={{ fontFamily: "'Bungee Spice', sans-serif" }}
+          >
+            MEET THE CREATOR
+          </Link>
           <ThemeToggle />
           
           {status === "authenticated" && session ? (

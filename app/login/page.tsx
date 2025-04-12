@@ -98,7 +98,7 @@ export default function LoginPage() {
     <div className="container mx-auto flex items-center justify-center min-h-[calc(100vh-200px)] px-4 py-12">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">Welcome to NewsHub</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to Envisage</CardTitle>
           <CardDescription>Sign in to access your personalized news feed</CardDescription>
         </CardHeader>
         <CardContent>

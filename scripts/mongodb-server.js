@@ -80,10 +80,17 @@ const initializeModels = () => {
   const userArticleInteractionSchema = new Schema({
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     articleId: { type: Schema.Types.ObjectId, ref: 'Article', required: true },
-    timeSpent: { type: Number, default: 0 },
-    completed: { type: Boolean, default: false },
-    interactionDate: { type: Date, default: Date.now },
-    lastPosition: { type: Number, default: 0 }
+    documentId: { type: String }, // Field for document ID
+    newsItems: [{  // Replace newsItemId with newsItems array
+      newsItemId: { type: Number },  // ID for each news item
+      timeSpent: { type: Number, default: 0 },
+      completed: { type: Boolean, default: false },
+      interactionDate: { type: Date, default: Date.now }
+    }],
+    timeSpent: { type: Number, default: 0 },  // Keep total time spent at top level
+    completed: { type: Boolean, default: false },  // Overall completion status
+    interactionDate: { type: Date, default: Date.now }
+    // lastPosition field removed
   }, { timestamps: true });
 
   // Define models
@@ -652,50 +659,121 @@ app.post('/api/users/:id/daily-stats', async (req, res) => {
 app.post('/api/users/:userId/interactions', async (req, res) => {
   try {
     await connectMongooseAndInitModels();
-    const { UserArticleInteraction, Article, UserStats } = models;
+    const { UserArticleInteraction, UserStats } = models;
     
     const { userId } = req.params;
-    const { articleId, timeSpent, completed, lastPosition } = req.body;
+    const { articleId, timeSpent, completed, newsItemId } = req.body;
     
     if (!articleId) {
       return res.status(400).json({ error: 'Article ID is required' });
     }
     
     // Find existing interaction or create new one
-    let interaction = await UserArticleInteraction.findOne({ userId, articleId });
+    console.log("Finding existing interaction for user:", userId, "and article:", articleId);
+    
+    // Parse articleId if it contains documentId_newsItemId format
+    let parsedArticleId = articleId;
+    let documentId;
+    let isCompoundId = false;
+    
+    if (articleId.includes('_')) {
+      isCompoundId = true;
+      [documentId, ] = articleId.split('_');
+      console.log(`Parsed articleId "${articleId}" into documentId: "${documentId}"`);
+      
+      // Try to convert documentId to ObjectId if it's in valid format
+      if (ObjectId.isValid(documentId)) {
+        try {
+          parsedArticleId = new ObjectId(documentId);
+          console.log(`Converted documentId to ObjectId format: ${parsedArticleId}`);
+        } catch (error) {
+          console.error(`Error converting documentId to ObjectId: ${error.message}`);
+          // Continue with the original string format if conversion fails
+          parsedArticleId = documentId;
+        }
+      } else {
+        parsedArticleId = documentId;
+      }
+    }
+    
+    // Find interaction with the correct criteria based on ID format
+    let interaction;
+    if (isCompoundId) {
+      // For compound IDs, search by userId and documentId
+      interaction = await UserArticleInteraction.findOne({ 
+        userId,
+        documentId
+      });
+    } else {
+      // For regular article IDs
+      interaction = await UserArticleInteraction.findOne({ 
+        userId, 
+        articleId
+      });
+    }
+    console.log("Found existing interaction:", interaction);
     
     if (!interaction) {
-      // Create new interaction
-      interaction = new UserArticleInteraction({
+      // Create new interaction with appropriate fields and newsItems array
+      const interactionData = {
         userId,
-        articleId,
         timeSpent: timeSpent || 0,
         completed: completed || false,
         interactionDate: new Date(),
-        lastPosition: lastPosition || 0
-      });
+        newsItems: [] // Initialize empty newsItems array
+      };
+      
+      // Add the appropriate ID fields based on the format
+      if (isCompoundId) {
+        interactionData.articleId = parsedArticleId;
+        interactionData.documentId = documentId;
+        
+        // Add the first newsItem entry if newsItemId is provided
+        if (newsItemId !== undefined) {
+          interactionData.newsItems.push({
+            newsItemId: parseInt(newsItemId) || newsItemId,
+            timeSpent: timeSpent || 0,
+            completed: completed || false,
+            interactionDate: new Date()
+          });
+        }
+      } else {
+        interactionData.articleId = articleId;
+      }
+      
+      interaction = new UserArticleInteraction(interactionData);
     } else {
-      // Update existing interaction
-      if (timeSpent !== undefined) interaction.timeSpent += timeSpent;  // Add to existing time
+      // Update existing interaction's top-level fields
+      if (timeSpent !== undefined) interaction.timeSpent += timeSpent;
       if (completed !== undefined) interaction.completed = completed;
-      if (lastPosition !== undefined) interaction.lastPosition = lastPosition;
       interaction.interactionDate = new Date();
+      
+      // Handle newsItemId if provided - check if it exists in the array
+      if (newsItemId !== undefined) {
+        const parsedNewsItemId = parseInt(newsItemId) || newsItemId;
+        const existingItemIndex = interaction.newsItems.findIndex(
+          item => item.newsItemId === parsedNewsItemId
+        );
+        
+        if (existingItemIndex >= 0) {
+          // Update existing news item entry
+          const existingItem = interaction.newsItems[existingItemIndex];
+          if (timeSpent !== undefined) existingItem.timeSpent += timeSpent;
+          if (completed !== undefined) existingItem.completed = completed;
+          existingItem.interactionDate = new Date();
+        } else {
+          // Add new news item entry
+          interaction.newsItems.push({
+            newsItemId: parsedNewsItemId,
+            timeSpent: timeSpent || 0,
+            completed: completed || false,
+            interactionDate: new Date()
+          });
+        }
+      }
     }
     
     await interaction.save();
-    
-    // Update article metrics
-    if (timeSpent) {
-      const article = await Article.findById(articleId);
-      if (article) {
-        article.viewCount += 1;
-        article.totalTimeSpent += timeSpent;
-        article.averageReadTime = article.viewCount > 0 
-          ? article.totalTimeSpent / article.viewCount 
-          : article.totalTimeSpent;
-        await article.save();
-      }
-    }
     
     // Update user stats if the article was completed
     if (completed) {
@@ -707,17 +785,36 @@ app.post('/api/users/:userId/interactions', async (req, res) => {
         if (timeSpent) userStats.totalTimeSpent += timeSpent;
         userStats.lastActivity = new Date();
         
-        // Find the article to get its category
-        const article = await Article.findById(articleId);
-        if (article && article.category) {
-          console.log('Article category found, updating category engagement...');
-          const category = article.category;
-          const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
-          
-          userStats.categoryEngagement.set(category, {
-            timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
-            articlesRead: existingEngagement.articlesRead + 1
-          });
+        // For envisage_web items, extract the category directly
+        // If articleId is in format docId_itemId, parse the newsItemId and get category from envisage_web
+        if (articleId.includes('_')) {
+          try {
+            const [docId, itemId] = articleId.split('_');
+            
+            const { db } = await connectToDatabase(
+              process.env.MONGODB_URI,
+              process.env.MONGODB_DB
+            );
+            
+            const doc = await db.collection('envisage_web').findOne(
+              { _id: docId, "newsItems.id": parseInt(itemId) },
+              { projection: { "newsItems.$": 1 } }
+            );
+            
+            if (doc && doc.newsItems && doc.newsItems[0]) {
+              const category = doc.newsItems[0].category;
+              if (category) {
+                const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
+                
+                userStats.categoryEngagement.set(category, {
+                  timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
+                  articlesRead: existingEngagement.articlesRead + 1
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error processing envisage_web category:', error);
+          }
         }
         
         // Update daily stats
@@ -973,14 +1070,16 @@ function formatDate(dateString) {
   }
 }
 
-// Increment view count for an item in envisage_web
+// Increment view count for an item in envisage_web - modified to work without user authentication
 app.post('/api/envisage_web/view', async (req, res) => {
   try {
-    const { articleId, dateKey, newsItemId } = req.body;
+    const { articleId, newsItemId } = req.body;
     
     if (!articleId) {
       return res.status(400).json({ error: 'Article ID is required' });
     }
+    
+    console.log(`Received view request with articleId: "${articleId}", newsItemId: ${newsItemId}`);
     
     // Split the articleId into document ID and news item ID if it contains '_'
     let documentId, itemId;
@@ -1011,219 +1110,247 @@ app.post('/api/envisage_web/view', async (req, res) => {
       process.env.MONGODB_DB
     );
     
-    // Import ObjectId from MongoDB directly - using ES module import
-    // import { ObjectId } from 'mongodb';
-    
-    // Try to convert to ObjectId if it's a valid format
+    // Try to convert documentId to ObjectId
     let documentObjectId;
     try {
-      // Check if the documentId is a valid ObjectId
+      // Always check if the documentId is a valid ObjectId format before converting
       if (ObjectId.isValid(documentId)) {
         documentObjectId = new ObjectId(documentId);
-        console.log(`Converted documentId to ObjectId: ${documentObjectId}`);
+        console.log(`Successfully converted documentId to ObjectId: ${documentObjectId}`);
       } else {
+        console.log(`Document ID "${documentId}" is not a valid ObjectId format, will use as string`);
         documentObjectId = documentId;
-        console.log(`Using documentId as string: ${documentId}`);
       }
     } catch (error) {
-      console.log(`Error converting to ObjectId, using as string: ${documentId}`);
-      documentObjectId = documentId;
+      console.error(`Error converting "${documentId}" to ObjectId:`, error);
+      documentObjectId = documentId; // Fallback to using as string
     }
     
-    // Find the document to determine the date key - try both string and ObjectId
-    console.log(`Searching for document with _id: ${documentObjectId}`);
-    let document = await db.collection('envisage_web').findOne({ _id: documentObjectId });
+    // First try to find the document with the ObjectId (if valid)
+    console.log(`Looking for document with _id:`, documentObjectId);
+    let document = null;
     
-    // If not found with ObjectId, try with string
-    if (!document && documentObjectId !== documentId) {
-      console.log(`Document not found with ObjectId, trying with string ID: ${documentId}`);
-      document = await db.collection('envisage_web').findOne({ _id: documentId });
+    try {
+      // First attempt with potentially converted ObjectId
+      document = await db.collection('envisage_web').findOne({ _id: documentObjectId });
+      
+      // If not found with ObjectId, try with string (only if they're different)
+      if (!document && documentObjectId.toString() !== documentId) {
+        console.log(`Document not found with ObjectId, trying with string ID: ${documentId}`);
+        document = await db.collection('envisage_web').findOne({ _id: documentId });
+      }
+    } catch (error) {
+      console.error(`Error finding document:`, error);
+      return res.status(500).json({ 
+        error: 'Database error when finding document',
+        message: error.message
+      });
     }
     
     if (!document) {
-      console.log('Document still not found, printing available documents:');
-      const allDocs = await db.collection('envisage_web').find({}, { projection: { _id: 1 }}).toArray();
-      console.log('Available document IDs:', allDocs.map(doc => doc._id));
+      console.log('Document not found. Checking all documents in collection:');
       
-      return res.status(404).json({ 
-        error: 'Document not found',
-        details: { documentId }
-      });
+      try {
+        // Get a sample of document IDs to help debug the issue
+        const allDocs = await db.collection('envisage_web').find({}, { projection: { _id: 1 }}).limit(10).toArray();
+        console.log('Sample document IDs:', allDocs.map(doc => String(doc._id)));
+        
+        return res.status(404).json({ 
+          error: 'Document not found',
+          details: { 
+            documentId,
+            searchedIds: [String(documentObjectId), documentId],
+            sampleIds: allDocs.map(doc => String(doc._id))
+          }
+        });
+      } catch (error) {
+        console.error(`Error retrieving sample document IDs:`, error);
+        return res.status(404).json({ 
+          error: 'Document not found and failed to retrieve sample IDs',
+          details: { documentId }
+        });
+      }
     }
     
-    console.log(`Found document with _id: ${document._id}`);
-    console.log('Document keys:', Object.keys(document));
+    console.log(`Found document with ID: ${document._id}`);
     
     // Find the date key (e.g., "2025-04-06_18:00")
-    // This is typically the first key that isn't "_id" and contains date format
     const availableKeys = Object.keys(document).filter(key => key !== '_id');
-    const targetDateKey = dateKey || availableKeys.find(key => key.includes('-') || key.includes('_'));
+    console.log(`Document keys: ${availableKeys.join(', ')}`);
     
-    if (!targetDateKey) {
-      return res.status(400).json({ 
-        error: 'Could not determine date key in document',
-        details: { documentId, availableKeys }
-      });
-    }
-    
-    console.log(`Using date key: "${targetDateKey}" from document`);
-    
-    // Create the MongoDB update query to increment the views in the newsItems array
-    // Based on the structure where newsItems is inside the date object
-    const updatePath = {};
-    updatePath[`${targetDateKey}.newsItems.$[elem].views`] = 1;
-    
-    const result = await db.collection('envisage_web').updateOne(
-      { _id: documentId },
-      { $inc: updatePath },
-      { 
-        arrayFilters: [{ "elem.id": numericItemId }] 
+    // Check if document has envisage_web property, which contains our date keys
+    if (document.envisage_web && typeof document.envisage_web === 'object') {
+      console.log('Found envisage_web property, looking for date keys inside it');
+      
+      // Look for date keys inside envisage_web object
+      const envisageKeys = Object.keys(document.envisage_web);
+      const dateKeys = envisageKeys.filter(key => key.match(/\d{4}-\d{2}-\d{2}/));
+      
+      if (dateKeys.length === 0) {
+        return res.status(400).json({ 
+          error: 'No date keys found inside envisage_web property',
+          details: { documentId, availableKeys: envisageKeys }
+        });
       }
-    );
-    
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ 
-        error: 'Document not found or news item not found in array', 
-        details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
-      });
-    }
-    
-    if (result.modifiedCount === 0) {
-      return res.status(400).json({ 
-        error: 'View count not incremented - news item may not exist in array',
-        details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
-      });
-    }
-    
-    return res.json({
-      message: 'View count incremented successfully',
-      updated: true,
-      details: {
-        documentId,
-        dateKey: targetDateKey,
-        newsItemId: numericItemId
+      
+      // Use the most recent date key (sort descending)
+      const targetDateKey = dateKeys.sort().reverse()[0];
+      console.log(`Using date key: "${targetDateKey}"`);
+      
+      // Check if this date key contains a newsItems array, inside envisage_web
+      if (!document.envisage_web[targetDateKey] || 
+          !document.envisage_web[targetDateKey].newsItems || 
+          !Array.isArray(document.envisage_web[targetDateKey].newsItems)) {
+        return res.status(400).json({ 
+          error: `No newsItems array found under date key "${targetDateKey}" in envisage_web`,
+          details: { 
+            documentId,
+            dateKey: targetDateKey,
+            hasDateObject: !!document.envisage_web[targetDateKey],
+            hasNewsItemsProperty: document.envisage_web[targetDateKey] ? 
+                                  !!document.envisage_web[targetDateKey].newsItems : false
+          }
+        });
       }
-    });
+      
+      // Find the specific news item to verify it exists
+      const newsItem = document.envisage_web[targetDateKey].newsItems.find(item => item.id === numericItemId);
+      if (!newsItem) {
+        return res.status(404).json({ 
+          error: `News item with ID ${numericItemId} not found in document`,
+          availableIds: document.envisage_web[targetDateKey].newsItems.map(item => item.id)
+        });
+      }
+      
+      console.log(`Found news item "${newsItem.title}" with ID ${numericItemId}`);
+      
+      // Create the MongoDB update query to increment the views in the newsItems array
+      const updatePath = {};
+      updatePath[`envisage_web.${targetDateKey}.newsItems.$[elem].views`] = 1;
+      
+      // Use the same id type (ObjectId or string) that was successfully used to find the document
+      const updateResult = await db.collection('envisage_web').updateOne(
+        { _id: document._id }, // Use the _id from the found document to ensure correct type
+        { $inc: updatePath },
+        { 
+          arrayFilters: [{ "elem.id": numericItemId }] 
+        }
+      );
+      
+      if (updateResult.matchedCount === 0) {
+        return res.status(404).json({ 
+          error: 'Failed to match document for update', 
+          details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
+        });
+      }
+      
+      if (updateResult.modifiedCount === 0) {
+        return res.status(400).json({ 
+          error: 'View count not incremented - no matching news item found',
+          details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
+        });
+      }
+      
+      console.log(`Successfully incremented view count for news item ${numericItemId}`);
+      
+      return res.json({
+        message: 'View count incremented successfully',
+        updated: true,
+        details: {
+          documentId: String(document._id),
+          dateKey: targetDateKey,
+          newsItemId: numericItemId,
+          title: newsItem.title,
+          previousViews: newsItem.views || 0
+        }
+      });
+
+      // Rest of your code continues, but with document.envisage_web[targetDateKey] instead of document[targetDateKey]
+      // ...
+    } else {
+      // Continue with original approach (looking for date keys at top level)
+      // Look for a key that matches a date format
+      const dateKeys = availableKeys.filter(key => key.match(/\d{4}-\d{2}-\d{2}/));
+      
+      if (dateKeys.length === 0) {
+        return res.status(400).json({ 
+          error: 'No date keys found in document',
+          details: { documentId, availableKeys }
+        });
+      }
+      
+      // Use the most recent date key (sort descending)
+      const targetDateKey = dateKeys.sort().reverse()[0];
+      console.log(`Using date key: "${targetDateKey}"`);
+      
+      // Check if this date key contains a newsItems array
+      if (!document[targetDateKey] || !document[targetDateKey].newsItems || !Array.isArray(document[targetDateKey].newsItems)) {
+        return res.status(400).json({ 
+          error: `No newsItems array found under date key "${targetDateKey}"`,
+          details: { 
+            documentId,
+            dateKey: targetDateKey,
+            hasDateObject: !!document[targetDateKey],
+            hasNewsItemsProperty: document[targetDateKey] ? !!document[targetDateKey].newsItems : false
+          }
+        });
+      }
+      
+      // Find the specific news item to verify it exists
+      const newsItem = document[targetDateKey].newsItems.find(item => item.id === numericItemId);
+      if (!newsItem) {
+        return res.status(404).json({ 
+          error: `News item with ID ${numericItemId} not found in document`,
+          availableIds: document[targetDateKey].newsItems.map(item => item.id)
+        });
+      }
+      
+      console.log(`Found news item "${newsItem.title}" with ID ${numericItemId}`);
+      
+      // Create the MongoDB update query to increment the views in the newsItems array
+      const updatePath = {};
+      updatePath[`${targetDateKey}.newsItems.$[elem].views`] = 1;
+      
+      // Use the same id type (ObjectId or string) that was successfully used to find the document
+      const updateResult = await db.collection('envisage_web').updateOne(
+        { _id: document._id }, // Use the _id from the found document to ensure correct type
+        { $inc: updatePath },
+        { 
+          arrayFilters: [{ "elem.id": numericItemId }] 
+        }
+      );
+      
+      if (updateResult.matchedCount === 0) {
+        return res.status(404).json({ 
+          error: 'Failed to match document for update', 
+          details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
+        });
+      }
+      
+      if (updateResult.modifiedCount === 0) {
+        return res.status(400).json({ 
+          error: 'View count not incremented - no matching news item found',
+          details: { documentId, dateKey: targetDateKey, newsItemId: numericItemId }
+        });
+      }
+      
+      console.log(`Successfully incremented view count for news item ${numericItemId}`);
+      
+      return res.json({
+        message: 'View count incremented successfully',
+        updated: true,
+        details: {
+          documentId: String(document._id),
+          dateKey: targetDateKey,
+          newsItemId: numericItemId,
+          title: newsItem.title,
+          previousViews: newsItem.views || 0
+        }
+      });
+    }
   } catch (error) {
     console.error('Error incrementing view count in envisage_web:', error);
     return res.status(500).json({ error: 'Failed to increment view count', message: error.message });
-  }
-});
-
-// Modify the user article interaction endpoint to handle envisage_web articleIds
-app.post('/api/users/:userId/interactions', async (req, res) => {
-  try {
-    await connectMongooseAndInitModels();
-    const { UserArticleInteraction, UserStats } = models;
-    
-    const { userId } = req.params;
-    const { articleId, timeSpent, completed, lastPosition } = req.body;
-    
-    if (!articleId) {
-      return res.status(400).json({ error: 'Article ID is required' });
-    }
-    
-    // Find existing interaction or create new one
-    let interaction = await UserArticleInteraction.findOne({ userId, articleId });
-    console.log("Found existing interaction:", interaction);
-    
-    if (!interaction) {
-      // Create new interaction
-      interaction = new UserArticleInteraction({
-        userId,
-        articleId,
-        timeSpent: timeSpent || 0,
-        completed: completed || false,
-        interactionDate: new Date(),
-        lastPosition: lastPosition || 0
-      });
-    } else {
-      // Update existing interaction
-      if (timeSpent !== undefined) interaction.timeSpent += timeSpent;  // Add to existing time
-      if (completed !== undefined) interaction.completed = completed;
-      if (lastPosition !== undefined) interaction.lastPosition = lastPosition;
-      interaction.interactionDate = new Date();
-    }
-    
-    await interaction.save();
-    
-    // Update user stats if the article was completed
-    if (completed) {
-      console.log('Article completed, updating user stats...');
-      const userStats = await UserStats.findOne({ userId });
-      if (userStats) {
-        console.log('User stats found, updating...');
-        userStats.articlesRead += 1;
-        if (timeSpent) userStats.totalTimeSpent += timeSpent;
-        userStats.lastActivity = new Date();
-        
-        // For envisage_web items, extract the category directly
-        // If articleId is in format docId_itemId, parse the newsItemId and get category from envisage_web
-        if (articleId.includes('_')) {
-          try {
-            const [docId, itemId] = articleId.split('_');
-            
-            const { db } = await connectToDatabase(
-              process.env.MONGODB_URI,
-              process.env.MONGODB_DB
-            );
-            
-            const doc = await db.collection('envisage_web').findOne(
-              { _id: docId, "newsItems.id": parseInt(itemId) },
-              { projection: { "newsItems.$": 1 } }
-            );
-            
-            if (doc && doc.newsItems && doc.newsItems[0]) {
-              const category = doc.newsItems[0].category;
-              if (category) {
-                const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
-                
-                userStats.categoryEngagement.set(category, {
-                  timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
-                  articlesRead: existingEngagement.articlesRead + 1
-                });
-              }
-            }
-          } catch (error) {
-            console.error('Error processing envisage_web category:', error);
-          }
-        }
-        
-        // Update daily stats
-        const today = new Date().toDateString();
-        const dailyStatIndex = userStats.dailyStats.findIndex(
-          ds => new Date(ds.date).toDateString() === today
-        );
-        
-        if (dailyStatIndex >= 0) {
-          console.log('Daily stats found, updating...');
-          userStats.dailyStats[dailyStatIndex].articlesRead += 1;
-          if (timeSpent) userStats.dailyStats[dailyStatIndex].timeSpent += timeSpent;
-        } else {
-          console.log('No daily stats found, creating new entry...');
-          userStats.dailyStats.push({
-            date: new Date(),
-            timeSpent: timeSpent || 0,
-            articlesRead: 1
-          });
-        }
-        
-        await userStats.save();
-        console.log('User stats updated and saved.');
-      } else {
-        console.log('User stats not found.');
-      }
-    } else {
-      console.log('Article not completed.');
-    }
-    
-    return res.status(201).json({
-      message: 'User article interaction recorded successfully',
-      interaction
-    });
-  } catch (error) {
-    console.error(`Error recording interaction for user ${req.params.userId}:`, error);
-    return res.status(500).json({ error: 'Failed to record user article interaction' });
   }
 });
 

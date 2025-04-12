@@ -110,14 +110,19 @@ export default function NewsGrid() {
   const [newsItems, setNewsItems] = useState<NewsItem[]>(initialNewsItems)
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null)
   const expandedCardRef = useRef<HTMLDivElement>(null)
-  const readTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null)
   const { data: session } = useSession() // Get current user session
+  
+  // Keep these references for compatibility but we're no longer using them actively
   const timeSpentRef = useRef<{ [key: number]: number }>({}) // Track time spent on each article
   const startTimeRef = useRef<number | null>(null) // Track when user started reading
+  
   const userId = session?.user?.id // Current user ID
   const processingMarkAsReadRef = useRef<Set<number>>(new Set()); // Track articles being processed
   const scrollDebounceTimerRef = useRef<NodeJS.Timeout | null>(null); // Debounce scroll events
+  
+  // Add a new timer reference for marking as read after 5 seconds
+  const articleReadTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load news items from envisage_web collection and check user interaction history
   useEffect(() => {
@@ -127,7 +132,7 @@ export default function NewsGrid() {
       try {
         // Step 1: Load all news items from envisage_web collection
         let allNewsItems: NewsItem[] = [];
-        let readArticleIds = new Set<string>();
+        let readArticleIds = new Map<string, Set<number>>(); // Changed to Map<documentId, Set<newsItemIds>>
         
         try {
           // Fetch news items from envisage_web collection
@@ -162,7 +167,7 @@ export default function NewsGrid() {
                       ...acc,
                       [key]: typeof result[key]
                     }), {})
-                  })
+                  }                  )
                 );
               }
               
@@ -210,6 +215,18 @@ export default function NewsGrid() {
                 newsItemsType: result.envisage_web && dateKey && result.envisage_web[dateKey] ? typeof result.envisage_web[dateKey].newsItems : 'undefined',
                 isArray: !!(result.envisage_web && dateKey && result.envisage_web[dateKey].newsItems && Array.isArray(result.envisage_web[dateKey].newsItems))
               });
+              
+              // Fix the syntax error by properly closing the parentheses
+              console.log('📋 DEBUG - Full result structure for troubleshooting:', 
+                JSON.stringify({
+                  hasId: !!result._id,
+                  topLevelKeys: Object.keys(result),
+                  resultStructure: Object.keys(result).reduce((acc, key) => ({
+                    ...acc,
+                    [key]: typeof result[key]
+                  }), {})
+                }                )
+              );
             }
           } else {
             console.error(`❌ news-grid: Error fetching envisage_web - Status: ${response.status}`);
@@ -230,7 +247,7 @@ export default function NewsGrid() {
           );
         }
         
-        // Step 2: If user is logged in, check interaction history
+        // Step 2: If user is logged in, check interaction history using updated schema
         if (userId) {
           try {
             console.log('👤 news-grid: Checking user interaction history');
@@ -239,33 +256,78 @@ export default function NewsGrid() {
             
             if (interactionsResponse.ok) {
               const interactionsData = await interactionsResponse.json();
+              console.log('👤 DEBUG - Received user interactions:', interactionsData);
               
-              // Extract IDs of completed (read) articles
-              readArticleIds = new Set(
-                interactionsData.interactions
-                  .filter((interaction: any) => interaction.completed)
-                  .map((interaction: any) => {
-                    // Handle both direct articleId and populated articleId object
-                    return typeof interaction.articleId === 'object' 
-                      ? interaction.articleId._id 
-                      : interaction.articleId;
-                  })
-              );
+              // Process each interaction
+              if (interactionsData.interactions && Array.isArray(interactionsData.interactions)) {
+                interactionsData.interactions.forEach((interaction: any) => {
+                  // Extract the document ID
+                  const documentId = interaction.documentId || String(interaction.articleId);
+                  
+                  if (!documentId) {
+                    console.log('⚠️ DEBUG - Interaction missing document ID:', interaction);
+                    return;
+                  }
+                  
+                  // Initialize the Set for this document if needed
+                  if (!readArticleIds.has(documentId)) {
+                    readArticleIds.set(documentId, new Set<number>());
+                  }
+                  
+                  // Check the newsItems array for completed items
+                  if (interaction.newsItems && Array.isArray(interaction.newsItems)) {
+                    interaction.newsItems.forEach((newsItem: any) => {
+                      if (newsItem.completed && newsItem.newsItemId !== undefined) {
+                        // Add the newsItemId to the set for this document
+                        const newsItemSet = readArticleIds.get(documentId)!;
+                        newsItemSet.add(Number(newsItem.newsItemId));
+                        
+                        console.log(`🔍 DEBUG - Marked newsItem ${newsItem.newsItemId} in document ${documentId} as read`);
+                      }
+                    });
+                  } else {
+                    console.log(`⚠️ DEBUG - Interaction for document ${documentId} has no newsItems array`);
+                  }
+                });
+              }
               
-              console.log(`✅ news-grid: Found ${readArticleIds.size} read articles in user history`);
+              // Log all read items for debugging
+              readArticleIds.forEach((itemIds, docId) => {
+                console.log(`✅ Document ${docId} has ${itemIds.size} read news items:`, Array.from(itemIds));
+              });
             }
           } catch (error) {
             console.error('❌ news-grid: Error fetching user interactions:', error);
           }
         }
         
-        // Step 3: Mark articles as read based on user history
-        const processedNewsItems = allNewsItems.map(item => ({
-          ...item,
-          isRead: item.articleId ? readArticleIds.has(item.articleId) : false
-        }));
+        // Step 3: Mark articles as read based on user history with new structure
+        const processedNewsItems = allNewsItems.map(item => {
+          // For each news item, check if it's been read
+          let isItemRead = false;
+          
+          if (item.articleId) {
+            // Parse articleId for document ID and news item ID
+            const [docId, newsItemIdStr] = item.articleId.split('_');
+            const newsItemId = parseInt(newsItemIdStr);
+            
+            // Check if this document+newsItem combination exists in our read map
+            if (docId && !isNaN(newsItemId) && readArticleIds.has(docId)) {
+              const readItemsForDoc = readArticleIds.get(docId)!;
+              if (readItemsForDoc.has(newsItemId)) {
+                isItemRead = true;
+                console.log(`📚 DEBUG - News item ${newsItemId} in document ${docId} is marked as read`);
+              }
+            }
+          }
+          
+          return {
+            ...item,
+            isRead: isItemRead
+          };
+        });
         
-        // Step 4: Sort items - unread first, read at the bottom
+        // Sort items - unread first, read at the bottom
         processedNewsItems.sort((a, b) => {
           if (a.isRead === b.isRead) return 0;
           return a.isRead ? 1 : -1;
@@ -287,7 +349,7 @@ export default function NewsGrid() {
         
         console.log(`📊 news-grid: Final news list has ${processedNewsItems.length} items (${processedNewsItems.filter(i => i.isRead).length} read)`);
         console.log('📋 DEBUG - Final news items with articleIds:', 
-          processedNewsItems.map(item => ({ id: item.id, title: item.title.substring(0, 20), articleId: item.articleId }))
+          processedNewsItems.map(item => ({ id: item.id, title: item.title.substring(0, 20), articleId: item.articleId, isRead: item.isRead }))
         );
         
         setNewsItems(processedNewsItems);
@@ -300,48 +362,77 @@ export default function NewsGrid() {
     loadNewsAndCheckReadStatus();
   }, [userId]); // Re-run when userId changes (login/logout)
 
-  // Record article interaction in the database
-  const recordArticleInteraction = async (articleId: string, timeSpent: number, completed: boolean, lastPosition: number = 0) => {
-    if (!userId || !articleId) {
-      console.log(`⚠️ news-grid: Cannot record interaction - userId: ${!!userId}, articleId: ${!!articleId}`);
-      return;
-    }
-    
-    const requestData = {
-      articleId,
-      timeSpent,
-      completed,
-      lastPosition
-    };
-    
-    console.log(`📊 news-grid: Recording interaction for article ${articleId}:`, requestData);
+// Record article interaction in the database - modified to use new newsItems array structure
+const recordArticleInteraction = async (articleId: string, completed: boolean) => {
+  if (!userId || !articleId) {
+    console.log(`⚠️ news-grid: Cannot record interaction - userId: ${!!userId}, articleId: ${!!articleId}`);
+    return;
+  }
+  
+  // Only record if completed=true (article was read)
+  if (!completed) {
+    console.log(`ℹ️ news-grid: Skipping interaction recording for article ${articleId} - not completed`);
+    return;
+  }
 
-    try {
-      const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/${userId}/interactions`;
-      console.log(`🔄 news-grid: Sending POST request to ${url}`);
+  // Parse articleId if it contains documentId_newsItemId format
+  let documentId, newsItemId;
+  
+  if (articleId.includes('_')) {
+    [documentId, newsItemId] = articleId.split('_');
+    console.log(`📊 news-grid: Parsed compound articleId "${articleId}" into documentId: "${documentId}" and newsItemId: "${newsItemId}"`);
+  }
+  
+  const requestData = {
+    articleId, // Always send the full articleId
+    timeSpent: 5, // Fixed time spent at 5 seconds
+    completed: true, // Always true when we record
+    // Include these fields for the new structure
+    documentId: documentId || undefined,
+    newsItemId: newsItemId ? parseInt(newsItemId) || newsItemId : undefined
+  };
+  
+  console.log(`📊 news-grid: Recording completed interaction for article ${articleId}:`, requestData);
+
+  try {
+    const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/${userId}/interactions`;
+    console.log(`🔄 news-grid: Sending POST request to ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestData),
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ news-grid: Recorded completed interaction for article ${articleId}:`, result);
       
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
+      // Immediately update the UI to show this article as read
+      setNewsItems(prevItems => {
+        // Find the item with this articleId
+        return prevItems.map(item => 
+          item.articleId === articleId ? { ...item, isRead: true } : item
+        ).sort((a, b) => {
+          if (a.isRead === b.isRead) return 0;
+          return a.isRead ? 1 : -1; // Sort read items to bottom
+        });
       });
       
-      if (response.ok) {
-        const result = await response.json();
-        console.log(`✅ news-grid: Recorded interaction for article ${articleId}:`, result);
-        return result;
-      } else {
-        const errorText = await response.text();
-        console.error(`❌ news-grid: Failed to record interaction - Status: ${response.status}`, errorText);
-      }
-    } catch (error) {
-      console.error('❌ news-grid: Error recording interaction:', error);
+      return result;
+    } else {
+      const errorText = await response.text();
+      console.error(`❌ news-grid: Failed to record interaction - Status: ${response.status}`, errorText);
     }
-  };
+  } catch (error) {
+    console.error('❌ news-grid: Error recording interaction:', error);
+  }
+};
 
-  // Track time spent reading an article
+  // Comment out old time tracking functions but keep them for reference
+  /*
   const startTimeTracking = (id: number) => {
     startTimeRef.current = Date.now();
     console.log(`⏱️ news-grid: Started time tracking for article ID ${id} at ${new Date().toISOString()}`);
@@ -359,18 +450,23 @@ export default function NewsGrid() {
       
       console.log(`⏱️ news-grid: Stopped time tracking for article ID ${id}. Time spent: ${timeSpent}s, Total: ${timeSpentRef.current[id]}s, Completed: ${completed}`);
       
-      const newsItem = newsItems.find(item => item.id === id);
-      if (newsItem?.articleId && userId) {
-        console.log(`📤 news-grid: Sending interaction data for article ID ${id} (${newsItem.articleId})`);
-        // Record the interaction with the time spent
-        await recordArticleInteraction(
-          newsItem.articleId,
-          timeSpent,
-          completed,
-          completed ? 100 : expandedCardRef.current?.scrollTop || 0
-        );
+      // Only record interaction if the article was completed (read)
+      if (completed) {
+        const newsItem = newsItems.find(item => item.id === id);
+        if (newsItem?.articleId && userId) {
+          console.log(`📤 news-grid: Article ID ${id} was completed, sending interaction data`);
+          // Record the completed interaction with the time spent
+          await recordArticleInteraction(
+            newsItem.articleId,
+            timeSpentRef.current[id], // Use total time spent on this article
+            true, // Always true for completed
+            100 // 100% read
+          );
+        } else {
+          console.log(`⚠️ news-grid: Cannot send completion data - articleId: ${newsItem?.articleId}, userId: ${userId}`);
+        }
       } else {
-        console.log(`⚠️ news-grid: Cannot send interaction - articleId: ${newsItem?.articleId}, userId: ${userId}`);
+        console.log(`ℹ️ news-grid: Not recording interaction for article ${id} - not completed`);
       }
       
       startTimeRef.current = null;
@@ -378,6 +474,7 @@ export default function NewsGrid() {
       console.log(`⚠️ news-grid: Cannot stop time tracking for article ID ${id} - no start time recorded`);
     }
   };
+  */
 
   // Listen for custom events from hero section
   useEffect(() => {
@@ -438,7 +535,7 @@ export default function NewsGrid() {
     ));
   };
 
-  // Handle card click to expand
+  // Handle card click to expand - modified to increment view regardless of user login status
   const handleCardClick = async (id: number, e: React.MouseEvent) => {
     e.preventDefault() // Prevent navigation
     
@@ -481,30 +578,34 @@ export default function NewsGrid() {
       return
     }
     
-    // If there was a previously expanded card, stop tracking time for it
+    // Cancel any existing read timer when opening a new card
+    if (articleReadTimerRef.current) {
+      clearTimeout(articleReadTimerRef.current);
+      articleReadTimerRef.current = null;
+    }
+    
+    // If there was a previously expanded card, close it without tracking time
     if (expandedCardId !== null) {
       console.log(`📌 news-grid: Closing previous article ID ${expandedCardId} before opening new one`);
-      await stopTimeTracking(expandedCardId);
+      // No longer tracking time, so removed the stopTimeTracking call
     }
 
     setExpandedCardId(id)
     console.log(`📌 news-grid: Opening article ID ${id}`);
     
-    // Start tracking time for the newly expanded card
-    startTimeTracking(id);
+    // No longer starting time tracking
+    // startTimeTracking(id);
     
-    // Record the view if user is logged in
-    if (newsItem?.articleId && userId) {
+    // Record the view - modified to work without requiring user login
+    if (newsItem?.articleId) {
       try {
-        // Increment view count for the envisage_web item
+        // Increment view count for the envisage_web item (regardless of user login status)
         const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/envisage_web/view`;
         console.log(`👁️ news-grid: Sending view increment request to ${url} for article ID ${id} (${newsItem.articleId})`);
         
         // The articleId format is already 'documentId_newsItemId'
-        // We'll let the server parse it correctly
         const viewData = {
           articleId: newsItem.articleId,
-          // No need to split here as the server will do it
           newsItemId: id // Send the numerical ID as backup
         };
         
@@ -555,7 +656,7 @@ export default function NewsGrid() {
         );
       }
     } else {
-      console.log(`⚠️ news-grid: Cannot record view - articleId: ${newsItem?.articleId}, userId: ${userId}`);
+      console.log(`⚠️ news-grid: Cannot record view - articleId: ${newsItem?.articleId}`);
       
       // Increment local view count anyway for consistency
       setNewsItems(prevItems => 
@@ -565,22 +666,14 @@ export default function NewsGrid() {
       );
     }
 
-    // Start a timer to track reading time
-    if (readTimerRef.current) {
-      clearTimeout(readTimerRef.current)
+    // Only start the read timer if user is logged in
+    if (userId && newsItem && !newsItem.isRead) {
+      console.log(`⏱️ news-grid: Starting 5-second read timer for article ID ${id}`);
+      articleReadTimerRef.current = setTimeout(() => {
+        console.log(`⏱️ news-grid: 5-second timer completed for article ID ${id}, marking as read`);
+        markAsRead(id, true); // true indicates completion
+      }, 5000); // 5 seconds
     }
-
-    readTimerRef.current = setTimeout(() => {
-      // Mark as read after the timer expires and if scrolled to bottom
-      const card = expandedCardRef.current
-      if (card) {
-        const isScrolledToBottom = card.scrollHeight - card.scrollTop <= card.clientHeight + 50 // Within 50px of bottom
-
-        if (isScrolledToBottom) {
-          markAsRead(id, true) // true indicates completion
-        }
-      }
-    }, 5000) // 5 seconds for demo purposes
   }
 
   // Handle scroll within expanded card to detect if user reached the bottom
@@ -596,74 +689,124 @@ export default function NewsGrid() {
       const card = expandedCardRef.current;
       if (!card) return;
       
-      const isScrolledToBottom = card.scrollHeight - card.scrollTop <= card.clientHeight + 50; // Within 50px of bottom
-
-      if (isScrolledToBottom && expandedCardId) {
+      // Calculate how close to the bottom we are (in pixels)
+      const scrollPosition = card.scrollTop + card.clientHeight;
+      const scrollMax = card.scrollHeight;
+      const scrollRemaining = scrollMax - scrollPosition;
+      
+      // Define what "reaching the bottom" means: within 30px of the bottom
+      const reachedBottom = scrollRemaining <= 30;
+      
+      // Log the scroll position to help debug
+      console.log(`📜 news-grid: Scroll position for article ${expandedCardId}: ` +
+        `${Math.round(scrollPosition)}/${Math.round(scrollMax)} (${Math.round(scrollRemaining)}px remaining), ` +
+        `reached bottom: ${reachedBottom}`);
+      
+      // Only mark as read if the user has scrolled to the bottom
+      if (reachedBottom && expandedCardId) {
+        console.log(`📚 news-grid: User scrolled to bottom of article ${expandedCardId}`);
         markAsRead(expandedCardId, true); // true indicates completion
       }
     }, 200); // 200ms debounce
   };
 
-  // Mark a card as read and reorder the list
-  const markAsRead = async (id: number, completed: boolean = false) => {
-    // Skip if already marked as read or already being processed
-    const newsItem = newsItems.find(item => item.id === id);
-    if (!newsItem || newsItem.isRead || processingMarkAsReadRef.current.has(id)) {
-      console.log(`⚠️ news-grid: Skipping markAsRead - Article ID ${id}, already read: ${newsItem?.isRead}, already processing: ${processingMarkAsReadRef.current.has(id)}`);
-      return;
-    }
-    
-    // Add to processing set to prevent duplicate calls
-    processingMarkAsReadRef.current.add(id);
-    
-    console.log(`📚 news-grid: Marking article ID ${id} as read, completed: ${completed}`);
-    
-    // Record completion if user scrolled to bottom and is logged in
+// Mark a card as read and reorder the list
+const markAsRead = async (id: number, completed: boolean = false) => {
+  // Skip if already marked as read or already being processed
+  const newsItem = newsItems.find(item => item.id === id);
+  if (!newsItem || newsItem.isRead || processingMarkAsReadRef.current.has(id)) {
+    console.log(`⚠️ news-grid: Skipping markAsRead - Article ID ${id}, already read: ${newsItem?.isRead}, already processing: ${processingMarkAsReadRef.current.has(id)}`);
+    return;
+  }
+  
+  // Add to processing set to prevent duplicate calls
+  processingMarkAsReadRef.current.add(id);
+  
+  console.log(`📚 news-grid: Marking article ID ${id} as read, completed: ${completed}`);
+  
+  try {
+    // Only record completion if the user actually completed reading the article
     if (completed && newsItem.articleId && userId) {
-      console.log(`📚 news-grid: Article ID ${id} completed, recording final stats`);
-      await stopTimeTracking(id, true);
-    }
-    
-    // Update UI to mark as read and move to the bottom
-    setNewsItems(prevItems => {
-      // Create a new array with the target item marked as read
-      const updatedItems = prevItems.map(item => 
-        item.id === id ? { ...item, isRead: true } : item
+      console.log(`📚 news-grid: Article ID ${id} completed, recording interaction`);
+      
+      // Direct call to recordArticleInteraction with modified arguments
+      await recordArticleInteraction(
+        newsItem.articleId,
+        true // completed
       );
+      
+      // Update UI to mark as read - this is now done in recordArticleInteraction
+      // for better synchronization with the database
+    } else {
+      console.log(`📌 news-grid: Not marking article ${id} as read because completed=${completed}`);
+    }
+  } catch (error) {
+    console.error(`❌ news-grid: Error in markAsRead for article ${id}:`, error);
+    
+    // Update UI even if there was an error with the API
+    if (completed) {
+      setNewsItems(prevItems => {
+        // Create a new array with the target item marked as read
+        const updatedItems = prevItems.map(item => 
+          item.id === id ? { ...item, isRead: true } : item
+        );
 
-      // Sort to move read items to the bottom
-      return updatedItems.sort((a, b) => {
-        if (a.isRead === b.isRead) return 0;
-        return a.isRead ? 1 : -1;
+        // Sort to move read items to the bottom
+        return updatedItems.sort((a, b) => {
+          if (a.isRead === b.isRead) return 0;
+          return a.isRead ? 1 : -1;
+        });
       });
-    });
-    
-    console.log(`✅ news-grid: Marked article ${id} as read`);
-    
+    }
+  } finally {
     // Remove from processing set now that we're done
     processingMarkAsReadRef.current.delete(id);
-  };
+  }
+};
 
   // Close expanded card
   const closeExpandedCard = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
+    // Cancel any existing read timer
+    if (articleReadTimerRef.current) {
+      clearTimeout(articleReadTimerRef.current);
+      articleReadTimerRef.current = null;
+    }
+    
     if (expandedCardId !== null) {
       console.log(`📌 news-grid: Closing article ID ${expandedCardId}`);
       
-      // Prevent redundant processing if already marked as read
-      const newsItem = newsItems.find(item => item.id === expandedCardId);
-      if (!newsItem?.isRead) {
-        // Stop tracking time when card is closed
-        await stopTimeTracking(expandedCardId);
+      // Get the current scroll position
+      const card = expandedCardRef.current;
+      if (card) {
+        const scrollPosition = card.scrollTop + card.clientHeight;
+        const scrollMax = card.scrollHeight;
+        const scrollRemaining = scrollMax - scrollPosition;
+        const scrollPercentage = Math.min(100, Math.round((scrollPosition / scrollMax) * 100));
+        const reachedBottom = scrollRemaining <= 30;
+        
+        console.log(`📜 news-grid: Article ${expandedCardId} read percentage: ${scrollPercentage}%`);
+        
+        // Consider as completed if scrolled at least 80% through the article
+        const consideredCompleted = scrollPercentage >= 80;
+        
+        // If the article is considered completed (reached bottom or read most of it)
+        if (consideredCompleted) {
+          const newsItem = newsItems.find(item => item.id === expandedCardId);
+          if (newsItem && !newsItem.isRead) {
+            console.log(`📚 news-grid: User read most/all of article ${expandedCardId}, marking as read`);
+            await markAsRead(expandedCardId, true);
+          }
+          // No need for else case with stopTimeTracking
+        } else {
+          console.log(`📌 news-grid: User only read ${scrollPercentage}% of article ${expandedCardId}, not marking as completed`);
+          // Not calling stopTimeTracking anymore
+        }
       }
     }
     
     setExpandedCardId(null);
-    
-    if (readTimerRef.current) {
-      clearTimeout(readTimerRef.current);
-    }
     
     if (scrollDebounceTimerRef.current) {
       clearTimeout(scrollDebounceTimerRef.current);
@@ -673,20 +816,43 @@ export default function NewsGrid() {
   // Clean up timer on unmount
   useEffect(() => {
     return () => {
-      if (readTimerRef.current) {
-        clearTimeout(readTimerRef.current);
-      }
-      
       if (scrollDebounceTimerRef.current) {
         clearTimeout(scrollDebounceTimerRef.current);
       }
       
-      // Record final time spent if card is still open when component unmounts
-      if (expandedCardId !== null) {
-        const newsItem = newsItems.find(item => item.id === expandedCardId);
-        if (newsItem && !newsItem.isRead && !processingMarkAsReadRef.current.has(expandedCardId)) {
-          stopTimeTracking(expandedCardId);
-        }
+      if (articleReadTimerRef.current) {
+        clearTimeout(articleReadTimerRef.current);
+      }
+      
+      // No longer need to check for time tracking when component unmounts
+    };
+  }, []);
+
+  // Add effect to handle the timer when expanded card ID changes
+  useEffect(() => {
+    // Cancel any previous timer
+    if (articleReadTimerRef.current) {
+      clearTimeout(articleReadTimerRef.current);
+      articleReadTimerRef.current = null;
+    }
+    
+    // Start new timer for the current article if not already read
+    if (expandedCardId !== null) {
+      const newsItem = newsItems.find(item => item.id === expandedCardId);
+      if (newsItem && !newsItem.isRead) {
+        console.log(`⏱️ news-grid: Starting 5-second read timer for article ID ${expandedCardId}`);
+        
+        articleReadTimerRef.current = setTimeout(() => {
+          console.log(`⏱️ news-grid: 5-second timer completed for article ID ${expandedCardId}, marking as read`);
+          markAsRead(expandedCardId, true);
+        }, 5000); // 5 seconds
+      }
+    }
+    
+    return () => {
+      if (articleReadTimerRef.current) {
+        clearTimeout(articleReadTimerRef.current);
+        articleReadTimerRef.current = null;
       }
     };
   }, [expandedCardId, newsItems]);

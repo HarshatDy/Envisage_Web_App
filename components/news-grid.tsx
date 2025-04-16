@@ -499,11 +499,35 @@ const recordArticleInteraction = async (articleId: string, completed: boolean) =
       }
     };
 
-    // Cast the CustomEvent to any to work around TypeScript event typing issues
+    // New handler for category events from sidebar
+    const handleOpenNewsCategory = (event: CustomEvent<{category: string}>) => {
+      const { category } = event.detail;
+      console.log('🔍 news-grid: Received openNewsCategory event for:', category);
+      
+      // Find the first news item with the matching category
+      const newsItem = newsItems.find(item => item.category === category);
+      
+      if (newsItem) {
+        console.log('✅ news-grid: Found matching news item with ID:', newsItem.id);
+        setExpandedCardId(newsItem.id);
+        
+        // Scroll the news item into view
+        const newsElement = document.getElementById(`news-item-${newsItem.id}`);
+        if (newsElement) {
+          newsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        console.log('⚠️ news-grid: No matching news item found for category:', category);
+      }
+    };
+
+    // Cast the CustomEvents to any to work around TypeScript event typing issues
     document.addEventListener('openNewsCard', handleOpenNewsCard as any);
+    document.addEventListener('openNewsCategory', handleOpenNewsCategory as any);
     
     return () => {
       document.removeEventListener('openNewsCard', handleOpenNewsCard as any);
+      document.removeEventListener('openNewsCategory', handleOpenNewsCategory as any);
     };
   }, [newsItems]);
 

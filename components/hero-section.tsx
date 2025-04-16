@@ -90,6 +90,17 @@ export default function HeroSection() {
     document.dispatchEvent(openCardEvent);
     console.log('🔔 hero-section: Dispatched openNewsCard event for:', news.slug);
   };
+  
+  // Handle click on the carousel item
+  const handleCarouselItemClick = (e: React.MouseEvent, news: any) => {
+    // Only handle clicks on the background, not on the button
+    if ((e.target as Element).closest('button')) {
+      return;
+    }
+    
+    e.preventDefault();
+    handleReadFullStory(e, news);
+  };
 
   return (
     <div className="relative overflow-hidden rounded-xl">
@@ -108,6 +119,8 @@ export default function HeroSection() {
               className={`absolute inset-0 transition-opacity duration-500 ${
                 index === currentSlide ? "opacity-100" : "opacity-0 pointer-events-none"
               }`}
+              onClick={(e) => handleCarouselItemClick(e, news)}
+              style={{ cursor: 'pointer' }}
             >
               <div className="relative h-full w-full">
                 <Image

@@ -137,7 +137,7 @@ export default function Sidebar() {
                 result.envisage_web[actualDateKey].newsItems && 
                 Array.isArray(result.envisage_web[actualDateKey].newsItems)) {
               
-              // Get the news items array from the nested structure and cast to NewsItem[]
+              // Get the news items array from the nested structure and cast to NewsItem[] 
               const newsItems: NewsItem[] = result.envisage_web[actualDateKey].newsItems
               console.log("Sidebar: Found newsItems array with", newsItems.length, "items")
               
@@ -229,6 +229,30 @@ export default function Sidebar() {
     }
   }, [])
 
+  // Function to handle clicking on a trending topic
+  const handleTrendingTopicClick = (topic: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    console.log(`🔍 sidebar: Clicked on trending topic: ${topic}`);
+
+    // Create and dispatch a custom event for the news-grid component to handle
+    const event = new CustomEvent('openNewsCategory', {
+      detail: { category: topic }
+    });
+    document.dispatchEvent(event);
+  };
+
+  // Function to handle clicking on a popular news item
+  const handlePopularNewsClick = (news: { id: number; title: string; slug: string }, e: React.MouseEvent) => {
+    e.preventDefault();
+    console.log(`🔍 sidebar: Clicked on popular news: ${news.title} (${news.slug})`);
+
+    // Create and dispatch a custom event for the news-grid component to handle
+    const event = new CustomEvent('openNewsCard', {
+      detail: { slug: news.slug, title: news.title }
+    });
+    document.dispatchEvent(event);
+  };
+
   return (
     <div className="space-y-6">
       {/* Stock Recommendations */}
@@ -299,11 +323,14 @@ export default function Sidebar() {
           ) : (
             <div className="flex flex-wrap gap-2">
               {trendingTopics.map((topic) => (
-                <Link key={topic} href={`/search?q=${encodeURIComponent(topic)}`}>
-                  <Button variant="outline" size="sm">
-                    {topic}
-                  </Button>
-                </Link>
+                <Button 
+                  key={topic} 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={(e) => handleTrendingTopicClick(topic, e)}
+                >
+                  {topic}
+                </Button>
               ))}
             </div>
           )}
@@ -334,9 +361,13 @@ export default function Sidebar() {
                 <div key={news.id}>
                   <div className="flex items-start gap-2">
                     <span className="font-bold text-lg text-muted-foreground">{index + 1}</span>
-                    <Link href={`/news/${news.slug}`} className="hover:text-primary transition-colors">
+                    <a 
+                      href={`#`}
+                      className="hover:text-primary transition-colors cursor-pointer"
+                      onClick={(e) => handlePopularNewsClick(news, e)}
+                    >
                       <h4 className="font-medium">{news.title}</h4>
-                    </Link>
+                    </a>
                   </div>
                   {index < popularNews.length - 1 && <Separator className="mt-4" />}
                 </div>

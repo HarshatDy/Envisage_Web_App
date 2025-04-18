@@ -699,25 +699,25 @@ const recordArticleInteraction = async (articleId: string, completed: boolean) =
     ));
   };
 
-  // Get size classes for the grid
+  // Get size classes for the grid - these will only apply on md+ screens now
   const getCardSizeClasses = (size: string = "medium") => {
     switch (size) {
       case "tiny":
-        return "col-span-1 row-span-1"
+        return "md:col-span-1 md:row-span-1" // Add md: prefix
       case "small":
-        return "col-span-1 row-span-1"
+        return "md:col-span-1 md:row-span-1" // Add md: prefix
       case "medium":
-        return "col-span-1 row-span-2"
+        return "md:col-span-1 md:row-span-2" // Add md: prefix
       case "large":
-        return "col-span-2 row-span-2"
+        return "md:col-span-2 md:row-span-2" // Add md: prefix
       case "wide":
-        return "col-span-2 row-span-1"
+        return "md:col-span-2 md:row-span-1" // Add md: prefix
       case "tall":
-        return "col-span-1 row-span-3"
+        return "md:col-span-1 md:row-span-3" // Add md: prefix
       case "featured":
-        return "col-span-3 row-span-2"
+        return "md:col-span-3 md:row-span-2" // Add md: prefix
       default:
-        return "col-span-1 row-span-1"
+        return "md:col-span-1 md:row-span-1" // Add md: prefix
     }
   }
 
@@ -1109,17 +1109,22 @@ const markAsRead = async (id: number, completed: boolean = false) => {
         </div>
       </div>
 
-      {/* Grid layout with responsive columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-[minmax(150px,auto)]">
+      {/* Grid layout with responsive columns/flow */}
+      {/* Below md: single vertical column */}
+      {/* md and up: multi-column, multi-row grid */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:auto-rows-[minmax(150px,auto)] lg:grid-cols-3"> {/* Changed base to grid-cols-1, removed flow/overflow/pb */}
         {newsItems.map((news) => (
           <motion.div
             key={news.id}
-            className={`${getCardSizeClasses(news.size)} relative`}
-            layout
+            // Base styles for small screens (single column, full width)
+            // Apply size classes conditionally for md+ screens
+            className={`relative w-full ${getCardSizeClasses(news.size)}`} // Removed fixed h/w, flex-shrink
+            layout // Be mindful layout animations might be complex with grid changes
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{
               opacity: 1,
               scale: 1,
+              // Adjust animation for read state if needed, might conflict with layout changes
               y: animatingCardId === news.id && news.isRead ? 20 : 0,
               zIndex: animatingCardId === news.id ? 10 : 1,
             }}
@@ -1127,17 +1132,19 @@ const markAsRead = async (id: number, completed: boolean = false) => {
             transition={{ duration: 0.5 }}
             id={`news-item-${news.id}`}
           >
+            {/* Ensure inner div takes full height */}
             <div
               className={`h-full ${expandedCardId === news.id ? "hidden" : "block"}`}
               onMouseEnter={() => setHoveredCardId(news.id)}
               onMouseLeave={() => setHoveredCardId(null)}
             >
               <motion.div
-                whileHover={{ scale: 1.03, zIndex: 5 }}
+                whileHover={{ scale: 1.03, zIndex: 5 }} // This will apply on all screen sizes
                 onClick={(e) => handleCardClick(news.id, e)}
                 className="cursor-pointer h-full"
               >
                 <Card
+                  // Ensure card takes full height of its container
                   className={`overflow-hidden h-full border-2 transition-all duration-300 relative ${
                     news.isRead ? "border-muted bg-muted/20" : "border-primary/20 hover:border-primary/50"
                   }`}
@@ -1185,20 +1192,20 @@ const markAsRead = async (id: number, completed: boolean = false) => {
                       </div>
                     </div>
 
-                    <h3 className="font-bold text-lg mb-auto">{news.title}</h3>
+                    <h3 className="font-bold text-base md:text-lg mb-auto line-clamp-3">{news.title}</h3>
 
-                    <p className="text-sm text-muted-foreground line-clamp-3 mt-2">
+                    <p className="text-sm text-muted-foreground line-clamp-2 md:line-clamp-3 mt-2">
                       {news.summary.split("\n\n")[0]}
                     </p>
 
                     {/* Article and source count badge - if available */}
                     {news.articleCount && news.sourceCount && (
-                      <div className="mt-2 mb-1 text-xs text-muted-foreground">
+                      <div className="hidden md:block mt-2 mb-1 text-xs text-muted-foreground">
                         {news.articleCount} Articles • {news.sourceCount} Sources
                       </div>
                     )}
 
-                    <div className="flex justify-between items-center mt-2">
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-transparent"> {/* Added pt-2 and border */}
                       <span className="text-xs text-muted-foreground">{news.date}</span>
                       <div className="flex items-center text-xs text-muted-foreground">
                         <Eye className="h-3 w-3 mr-1" />

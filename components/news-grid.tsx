@@ -5,11 +5,23 @@ import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
+import { motion, AnimatePresence } from "framer-motion"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Eye, X } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import {
+  Eye,
+  X,
+  Clock,
+  Bookmark,
+  Share2,
+  BookMarked, // Changed from BookmarkCheck based on error suggestion
+  ArrowRight,
+  User,
+} from "lucide-react"
 import { useSession } from "next-auth/react" // For user authentication
+import { Toast } from "@/components/ui/toast"
 
 // Define interface for news item
 interface NewsItem {
@@ -25,6 +37,11 @@ interface NewsItem {
   articleId?: string; // MongoDB _id for the article
   articleCount?: number; 
   sourceCount?: number;
+  isBookmarked?: boolean;
+  size?: string; // small, medium, large for different card sizes
+  type?: string; // article, stocks, trending, newsletter
+  readTime?: string;
+  images?: string[]; // Add the new images array property
 }
 
 // Sample news data
@@ -106,6 +123,30 @@ const initialNewsItems = [
   },
 ]
 
+// Encouraging messages for read completion
+const encouragingMessages = [
+  "Way to go! You're staying informed.",
+  "Great job! You're ahead of 87% of readers today.",
+  "Knowledge is power! Keep it up.",
+  "You're crushing it! Another article completed.",
+  "Impressive! You're becoming an expert.",
+  "Amazing progress! You're on a roll.",
+  "Fantastic! You're building your knowledge base.",
+  "Brilliant! You're more informed than most.",
+  "Excellent! You're making the most of your 20 minutes.",
+  "Superb! You're mastering today's news.",
+]
+
+// Define interface for news item to be sent to HeroSection
+interface HeroNewsItem {
+  id: number;
+  title: string;
+  summary: string;
+  image: string;
+  category: string;
+  slug: string;
+}
+
 export default function NewsGrid() {
   const [newsItems, setNewsItems] = useState<NewsItem[]>(initialNewsItems)
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null)
@@ -123,6 +164,33 @@ export default function NewsGrid() {
   
   // Add a new timer reference for marking as read after 5 seconds
   const articleReadTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // New states for updated UI
+  const [animatingCardId, setAnimatingCardId] = useState<number | null>(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [totalReadingTime, setTotalReadingTime] = useState(0);
+
+  // Calculate total reading time of unread articles
+  useEffect(() => {
+    // Assign a default read time to articles that don't have one
+    const articlesWithReadTime = newsItems.map(item => ({
+      ...item,
+      readTime: item.readTime || `${Math.floor(item.summary.length / 300) + 2} min`
+    }));
+    
+    const unreadItems = articlesWithReadTime.filter((item) => !item.isRead);
+    const total = unreadItems.reduce((acc, item) => {
+      return acc + Number.parseInt(item.readTime?.split(" ")[0] || "3");
+    }, 0);
+    
+    setTotalReadingTime(total);
+    
+    // Update items with read times if they don't have them
+    if (articlesWithReadTime.some(item => !item.readTime)) {
+      setNewsItems(articlesWithReadTime);
+    }
+  }, [newsItems]);
 
   // Load news items from envisage_web collection and check user interaction history
   useEffect(() => {
@@ -172,15 +240,29 @@ export default function NewsGrid() {
               }
               
               // Map the newsItems data to our NewsItem format with combined articleId
-              allNewsItems = result.envisage_web[dateKey].newsItems.map((item: any) => {
+              allNewsItems = result.envisage_web[dateKey].newsItems.map((item: any, index: number) => {
                 // Create a combined articleId using document ID and news item ID
                 const combinedArticleId = documentId ? `${documentId}_${item.id}` : `fallback-id_${item.id}`;
                 
+                // Assign size based on index for visual variety
+                const sizeOptions = ["tiny", "small", "medium", "large", "wide", "tall"];
+                const size = sizeOptions[Math.floor(Math.random() * sizeOptions.length)];
+                
+                // Select image: Use random image from 'images' array if available, else fallback
+                let selectedImage = item.image || "/placeholder.svg?height=400&width=600"; // Default fallback
+                if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+                  const randomIndex = Math.floor(Math.random() * item.images.length);
+                  selectedImage = item.images[randomIndex];
+                  console.log(`🖼️ DEBUG - Using random image from 'images' array for item ${item.id}: ${selectedImage}`);
+                } else {
+                  console.log(`⚠️ DEBUG - No 'images' array found or empty for item ${item.id}, using fallback: ${selectedImage}`);
+                }
+
                 const newsItem = {
                   id: item.id,
                   title: item.title,
                   summary: item.summary || "",
-                  image: item.image || "/placeholder.svg?height=400&width=600",
+                  image: selectedImage, // Use the selected image URL
                   category: item.category,
                   date: item.date,
                   slug: item.slug,
@@ -188,7 +270,12 @@ export default function NewsGrid() {
                   isRead: false,
                   articleId: combinedArticleId, // Use combined ID format
                   articleCount: item.articleCount,
-                  sourceCount: item.sourceCount
+                  sourceCount: item.sourceCount,
+                  isBookmarked: false,
+                  size: size,
+                  type: "article",
+                  readTime: `${Math.floor((item.summary || "").length / 300) + 2} min`,
+                  images: item.images // Store the original images array if needed later
                 };
                 
                 console.log(`📋 DEBUG - Created news item ${item.id} with combined articleId: ${newsItem.articleId}`);
@@ -237,10 +324,29 @@ export default function NewsGrid() {
           console.error('❌ news-grid: Error loading news from envisage_web:', error);
           
           // Fallback to sample data BUT ensure they all have articleIds
-          allNewsItems = initialNewsItems.map(item => ({
-            ...item,
-            articleId: item.articleId || `sample-article-id-${item.id}`, // Ensure every sample item has an articleId
-          }));
+          allNewsItems = initialNewsItems.map((item: NewsItem, index: number) => { // Explicitly type 'item' as NewsItem
+            // Assign size based on index for visual variety
+            const sizeOptions = ["tiny", "small", "medium", "large", "wide", "tall"];
+            const size = sizeOptions[Math.floor(Math.random() * sizeOptions.length)];
+            
+            // Select image for fallback data (use existing logic)
+            let selectedImage = item.image || "/placeholder.svg?height=400&width=600";
+            // This check should now be type-safe
+            if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+              const randomIndex = Math.floor(Math.random() * item.images.length);
+              selectedImage = item.images[randomIndex];
+            }
+
+            return {
+              ...item,
+              image: selectedImage, // Use selected image for fallback too
+              articleId: item.articleId || `sample-article-id-${item.id}`, // Ensure every sample item has an articleId
+              isBookmarked: false,
+              size: item.size || size,
+              type: item.type || "article",
+              readTime: item.readTime || `${Math.floor((item.summary || "").length / 300) + 2} min`
+            };
+          });
           
           console.log('⚠️ news-grid: Using sample news items as fallback with articleIds:', 
             allNewsItems.map(item => ({ id: item.id, articleId: item.articleId }))
@@ -354,6 +460,40 @@ export default function NewsGrid() {
         
         setNewsItems(processedNewsItems);
         
+        // **** ADDED: Dispatch event with hero news ****
+        try {
+          // Filter items that have a valid image URL (not placeholder or empty)
+          const itemsWithImages = processedNewsItems.filter(item => item.image && !item.image.includes('placeholder.svg'));
+
+          if (itemsWithImages.length > 0) {
+            // Shuffle the array and take the first 5 (or fewer if less than 5 available)
+            const shuffled = itemsWithImages.sort(() => 0.5 - Math.random());
+            const heroNewsData = shuffled.slice(0, 5).map(item => ({
+              id: item.id, // Use the original news item ID
+              title: item.title,
+              summary: item.summary.split('\n\n')[0], // Take first paragraph for summary
+              image: item.image,
+              category: item.category,
+              slug: item.slug,
+            }));
+
+            console.log(`🦸 news-grid: Selected ${heroNewsData.length} items for Hero section:`, heroNewsData.map(n => n.slug));
+
+            // Dispatch the custom event with the selected news data
+            const heroEvent = new CustomEvent<HeroNewsItem[]>('heroNewsLoaded', { detail: heroNewsData });
+            document.dispatchEvent(heroEvent);
+            console.log('🔔 news-grid: Dispatched heroNewsLoaded event.');
+          } else {
+            console.warn('⚠️ news-grid: No suitable news items with images found for Hero section.');
+            // Optionally dispatch an empty array or default data
+             const heroEvent = new CustomEvent<HeroNewsItem[]>('heroNewsLoaded', { detail: [] });
+             document.dispatchEvent(heroEvent);
+          }
+        } catch (dispatchError) {
+           console.error('❌ news-grid: Error preparing or dispatching hero news event:', dispatchError);
+        }
+        // **** END ADDED ****
+
       } catch (error) {
         console.error('❌ news-grid: Error in loadNewsAndCheckReadStatus:', error);
       }
@@ -559,6 +699,28 @@ const recordArticleInteraction = async (articleId: string, completed: boolean) =
     ));
   };
 
+  // Get size classes for the grid
+  const getCardSizeClasses = (size: string = "medium") => {
+    switch (size) {
+      case "tiny":
+        return "col-span-1 row-span-1"
+      case "small":
+        return "col-span-1 row-span-1"
+      case "medium":
+        return "col-span-1 row-span-2"
+      case "large":
+        return "col-span-2 row-span-2"
+      case "wide":
+        return "col-span-2 row-span-1"
+      case "tall":
+        return "col-span-1 row-span-3"
+      case "featured":
+        return "col-span-3 row-span-2"
+      default:
+        return "col-span-1 row-span-1"
+    }
+  }
+
   // Handle card click to expand - modified to increment view regardless of user login status
   const handleCardClick = async (id: number, e: React.MouseEvent) => {
     e.preventDefault() // Prevent navigation
@@ -611,16 +773,12 @@ const recordArticleInteraction = async (articleId: string, completed: boolean) =
     // If there was a previously expanded card, close it without tracking time
     if (expandedCardId !== null) {
       console.log(`📌 news-grid: Closing previous article ID ${expandedCardId} before opening new one`);
-      // No longer tracking time, so removed the stopTimeTracking call
     }
 
     setExpandedCardId(id)
     console.log(`📌 news-grid: Opening article ID ${id}`);
     
-    // No longer starting time tracking
-    // startTimeTracking(id);
-    
-    // Record the view - modified to work without requiring user login
+    // Record the view - modified to work without requiring user login status
     if (newsItem?.articleId) {
       try {
         // Increment view count for the envisage_web item (regardless of user login status)
@@ -655,7 +813,6 @@ const recordArticleInteraction = async (articleId: string, completed: boolean) =
           console.error(`❌ news-grid: Error incrementing view count - Status: ${response.status}`, errorText);
           
           // Still increment local view count for better UX even if API call fails
-          // This ensures the UI is responsive even when the backend has issues
           console.log(`⚠️ news-grid: Incrementing local view count despite API error`);
           setNewsItems(prevItems => 
             prevItems.map(item => 
@@ -697,6 +854,24 @@ const recordArticleInteraction = async (articleId: string, completed: boolean) =
         console.log(`⏱️ news-grid: 5-second timer completed for article ID ${id}, marking as read`);
         markAsRead(id, true); // true indicates completion
       }, 5000); // 5 seconds
+    }
+  }
+
+  // Toggle bookmark status
+  const toggleBookmark = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent card from opening
+    setNewsItems((prevItems) =>
+      prevItems.map((item) => (item.id === id ? { ...item, isBookmarked: !item.isBookmarked } : item)),
+    )
+  }
+
+  // Share article
+  const shareArticle = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent card from opening
+    const article = newsItems.find((item) => item.id === id)
+    if (article) {
+      // In a real app, this would use the Web Share API or a custom share dialog
+      alert(`Sharing article: ${article.title}`)
     }
   }
 
@@ -752,6 +927,19 @@ const markAsRead = async (id: number, completed: boolean = false) => {
     // Only record completion if the user actually completed reading the article
     if (completed && newsItem.articleId && userId) {
       console.log(`📚 news-grid: Article ID ${id} completed, recording interaction`);
+      
+      // Show encouraging toast message
+      const randomMessage = encouragingMessages[Math.floor(Math.random() * encouragingMessages.length)];
+      setToastMessage(randomMessage);
+      setShowToast(true);
+      
+      // Hide toast after 3 seconds
+      setTimeout(() => {
+        setShowToast(false);
+      }, 3000);
+      
+      // Set animating card ID for visual feedback
+      setAnimatingCardId(id);
       
       // Direct call to recordArticleInteraction with modified arguments
       await recordArticleInteraction(
@@ -822,11 +1010,15 @@ const markAsRead = async (id: number, completed: boolean = false) => {
             console.log(`📚 news-grid: User read most/all of article ${expandedCardId}, marking as read`);
             await markAsRead(expandedCardId, true);
           }
-          // No need for else case with stopTimeTracking
         } else {
           console.log(`📌 news-grid: User only read ${scrollPercentage}% of article ${expandedCardId}, not marking as completed`);
-          // Not calling stopTimeTracking anymore
         }
+      }
+      
+      // Set animating card ID for animation on close
+      const currentItem = newsItems.find(item => item.id === expandedCardId);
+      if (currentItem && currentItem.isRead) {
+        setAnimatingCardId(expandedCardId);
       }
     }
     
@@ -847,8 +1039,6 @@ const markAsRead = async (id: number, completed: boolean = false) => {
       if (articleReadTimerRef.current) {
         clearTimeout(articleReadTimerRef.current);
       }
-      
-      // No longer need to check for time tracking when component unmounts
     };
   }, []);
 
@@ -881,80 +1071,182 @@ const markAsRead = async (id: number, completed: boolean = false) => {
     };
   }, [expandedCardId, newsItems]);
 
+  // After animation completes, reorder the list
+  useEffect(() => {
+    if (animatingCardId !== null) {
+      const timeoutId = setTimeout(() => {
+        setNewsItems((prevItems) => {
+          // Sort the array to push read items to the bottom
+          return [...prevItems].sort((a, b) => {
+            if (a.isRead === b.isRead) return 0;
+            return a.isRead ? 1 : -1;
+          });
+        });
+        setAnimatingCardId(null);
+      }, 500); // Wait for animation to complete
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [animatingCardId]);
+
+  // Count unread articles
+  const unreadCount = newsItems.filter((item) => !item.isRead).length;
+
+  // Get reading time
+  const getReadingTime = (item: NewsItem) => {
+    return item.readTime || `${Math.floor(item.summary.length / 300) + 2} min`;
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative">
-      {newsItems.map((news) => (
-        <div key={news.id} id={`news-item-${news.id}`} className="relative">
-          {/* Regular card */}
-          <div
-            className={`${expandedCardId === news.id ? "hidden" : "block"}`}
-            onMouseEnter={() => setHoveredCardId(news.id)}
-            onMouseLeave={() => setHoveredCardId(null)}
+    <>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Today's Top Stories</h2>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Clock className="h-4 w-4" />
+          <span>
+            {unreadCount} unread stories • {totalReadingTime} min total
+          </span>
+        </div>
+      </div>
+
+      {/* Grid layout with responsive columns */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-[minmax(150px,auto)]">
+        {newsItems.map((news) => (
+          <motion.div
+            key={news.id}
+            className={`${getCardSizeClasses(news.size)} relative`}
+            layout
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              y: animatingCardId === news.id && news.isRead ? 20 : 0,
+              zIndex: animatingCardId === news.id ? 10 : 1,
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            id={`news-item-${news.id}`}
           >
-            <div onClick={(e) => handleCardClick(news.id, e)} className="cursor-pointer">
-              <Card
-                className={`overflow-hidden h-full transition-all duration-300 hover:shadow-xl hover:-translate-y-2 relative ${news.isRead ? "opacity-75 border-muted" : ""}`}
-              >
-                <div className="relative h-48 w-full overflow-hidden">
-                  <Image
-                    src={news.image || "/placeholder.svg"}
-                    alt={news.title}
-                    fill
-                    className="object-cover transition-transform duration-300 hover:scale-105"
-                  />
-                  <div className="absolute top-3 left-3">
-                    <Badge variant="outline" className="bg-[#3B82F6]/90 text-white border-none">
-                      {news.category}
-                    </Badge>
-                  </div>
-
-                  {/* Article and source count badge - new feature */}
-                  {news.articleCount && news.sourceCount && (
-                    <div className="absolute top-3 right-3 bg-background/80 text-foreground text-xs px-2 py-1 rounded">
-                      {news.articleCount} Articles • {news.sourceCount}
-                    </div>
-                  )}
-
-                  {/* Views indicator - visible only when not hovered */}
-                  {hoveredCardId !== news.id && (
-                    <div className="absolute bottom-3 right-3 bg-black/70 text-white text-xs px-2 py-1 rounded-full flex items-center">
-                      <Eye className="h-3 w-3 mr-1" />
-                      {news.views.toLocaleString()}
-                    </div>
-                  )}
-
-                  {/* Read indicator */}
-                  {news.isRead && (
-                    <div className="absolute top-12 right-3 bg-muted text-muted-foreground text-xs px-2 py-1 rounded">
-                      Read
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-4">
-                  <h3 className="font-bold text-lg mb-2">{news.title}</h3>
-                  <div className="text-sm text-muted-foreground line-clamp-3">
-                    {formatSummaryText(news.summary.substring(0, 150) + (news.summary.length > 150 ? '...' : ''))}
-                  </div>
-                </div>
-              </Card>
-            </div>
-          </div>
-
-          {/* Expanded card */}
-          {expandedCardId === news.id && (
             <div
-              ref={expandedCardRef}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-background/80 backdrop-blur-sm overflow-y-auto"
-              onClick={closeExpandedCard}
+              className={`h-full ${expandedCardId === news.id ? "hidden" : "block"}`}
+              onMouseEnter={() => setHoveredCardId(news.id)}
+              onMouseLeave={() => setHoveredCardId(null)}
             >
-              <Card
-                className="w-full max-w-3xl max-h-[90vh] overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
-                onScroll={handleCardScroll}
+              <motion.div
+                whileHover={{ scale: 1.03, zIndex: 5 }}
+                onClick={(e) => handleCardClick(news.id, e)}
+                className="cursor-pointer h-full"
               >
+                <Card
+                  className={`overflow-hidden h-full border-2 transition-all duration-300 relative ${
+                    news.isRead ? "border-muted bg-muted/20" : "border-primary/20 hover:border-primary/50"
+                  }`}
+                >
+                  {/* Fading background image */}
+                  <div className="absolute inset-0 z-0 opacity-15">
+                    <Image
+                      src={news.image || "/placeholder.svg"}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      priority={news.id < 5}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent" />
+                  </div>
+
+                  <div className="p-4 h-full flex flex-col relative z-10">
+                    <div className="flex justify-between items-start mb-2">
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-none mb-2">
+                        {news.category}
+                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-7 w-7 ${hoveredCardId === news.id ? "opacity-100" : "opacity-0"} transition-opacity`}
+                          onClick={(e) => toggleBookmark(news.id, e)}
+                        >
+                          {news.isBookmarked ? (
+                            <BookMarked className="h-4 w-4 text-primary" /> // Changed from BookmarkCheck
+                          ) : (
+                            <Bookmark className="h-4 w-4" />
+                          )}
+                          <span className="sr-only">Bookmark</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-7 w-7 ${hoveredCardId === news.id ? "opacity-100" : "opacity-0"} transition-opacity`}
+                          onClick={(e) => shareArticle(news.id, e)}
+                        >
+                          <Share2 className="h-4 w-4" />
+                          <span className="sr-only">Share</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    <h3 className="font-bold text-lg mb-auto">{news.title}</h3>
+
+                    <p className="text-sm text-muted-foreground line-clamp-3 mt-2">
+                      {news.summary.split("\n\n")[0]}
+                    </p>
+
+                    {/* Article and source count badge - if available */}
+                    {news.articleCount && news.sourceCount && (
+                      <div className="mt-2 mb-1 text-xs text-muted-foreground">
+                        {news.articleCount} Articles • {news.sourceCount} Sources
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-xs text-muted-foreground">{news.date}</span>
+                      <div className="flex items-center text-xs text-muted-foreground">
+                        <Eye className="h-3 w-3 mr-1" />
+                        {news.views.toLocaleString()}
+                      </div>
+                    </div>
+
+                    {/* Read indicator */}
+                    {news.isRead && (
+                      <div className="absolute top-2 right-2 bg-muted text-muted-foreground text-xs px-2 py-1 rounded">
+                        Read
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </motion.div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Expanded card modal */}
+      <AnimatePresence>
+        {expandedCardId !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-background/80 backdrop-blur-sm"
+            onClick={closeExpandedCard}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+              ref={expandedCardRef}
+              onScroll={handleCardScroll}
+            >
+              <Card className="overflow-hidden">
                 <div className="relative h-64 md:h-80 w-full">
-                  <Image src={news.image || "/placeholder.svg"} alt={news.title} fill className="object-cover" />
+                  <Image
+                    src={newsItems.find((item) => item.id === expandedCardId)?.image || "/placeholder.svg"}
+                    alt={newsItems.find((item) => item.id === expandedCardId)?.title || ""}
+                    fill
+                    className="object-cover"
+                  />
                   <Button
                     variant="ghost"
                     size="icon"
@@ -963,41 +1255,71 @@ const markAsRead = async (id: number, completed: boolean = false) => {
                   >
                     <X className="h-5 w-5" />
                   </Button>
-                  <div className="absolute bottom-4 left-4">
-                    <Badge variant="outline" className="bg-[#3B82F6]/90 text-white border-none">
-                      {news.category}
+                  <div className="absolute bottom-4 left-4 flex gap-2">
+                    <Badge variant="outline" className="bg-primary/90 text-primary-foreground border-none">
+                      {newsItems.find((item) => item.id === expandedCardId)?.category}
+                    </Badge>
+                    <Badge variant="outline" className="bg-black/70 text-white border-none">
+                      {newsItems.find((item) => item.id === expandedCardId)?.date}
                     </Badge>
                   </div>
                 </div>
 
                 <div className="p-6">
-                  <h2 className="text-2xl font-bold mb-2">{news.title}</h2>
-                  <div className="w-full h-0.5 bg-[#3B82F6] my-4"></div>
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-2xl font-bold">
+                      {newsItems.find((item) => item.id === expandedCardId)?.title}
+                    </h2>
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      {newsItems.find((item) => item.id === expandedCardId)?.readTime || "5 min"} read
+                    </div>
+                  </div>
+                  <div className="w-full h-0.5 bg-primary my-4"></div>
                   <div className="flex justify-between text-sm text-muted-foreground mb-4">
-                    <span>{news.date}</span>
+                    <span>Published {newsItems.find((item) => item.id === expandedCardId)?.date}</span>
                     <div className="flex items-center">
                       <Eye className="h-4 w-4 mr-1" />
-                      {news.views.toLocaleString()} views
+                      {newsItems.find((item) => item.id === expandedCardId)?.views.toLocaleString()} views
                     </div>
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
-                    {formatSummaryText(news.summary)}
+                    {formatSummaryText(newsItems.find((item) => item.id === expandedCardId)?.summary || "")}
                   </div>
                   <div className="mt-6 flex justify-between">
                     <Button variant="outline" onClick={closeExpandedCard}>
                       Close
                     </Button>
-                    <Link href={`/news/${news.slug}`} passHref>
+                    <Link href={`/news/${newsItems.find((item) => item.id === expandedCardId)?.slug}`} passHref>
                       <Button>Read Full Article</Button>
                     </Link>
                   </div>
                 </div>
               </Card>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast notification for read completion */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: -50, x: "-50%" }}
+            className="fixed top-4 left-1/2 z-50 transform -translate-x-1/2"
+          >
+            <Toast className="bg-primary text-primary-foreground px-6 py-3 rounded-lg shadow-lg">
+              <div className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                <span className="font-medium">{toastMessage}</span>
+              </div>
+            </Toast>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
 

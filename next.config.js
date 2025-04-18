@@ -3,7 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   images: {
-    domains: ['localhost', 'your-production-domain.com'], // Add your actual production domain when deploying
+    domains: ['localhost', 'your-production-domain.com', 'lh3.googleusercontent.com', 'storage.googleapis.com'], // Add your actual production domain when deploying
     remotePatterns: [
       {
         protocol: 'http',

@@ -94,7 +94,7 @@ export default function DailyDigestBanner() {
         setIsLoadingArticles(true)
         
         // Get total articles from current digest period (from envisage_web)
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/envisage_web`)
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'}/api/envisage_web`)
         if (response.ok) {
           const data = await response.json()
           console.log(`✅ daily-digest: Loaded envisage_web data`)
@@ -128,7 +128,7 @@ export default function DailyDigestBanner() {
         
         // If user is logged in, fetch their article interactions
         if (session?.user?.id) {
-          const userResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/${session.user.id}/interactions?completed=true`)
+          const userResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'}/api/users/${session.user.id}/interactions?completed=true`)
           const userData = await userResponse.json()
           
           console.log('🔍 daily-digest: Fetched user interactions data:', userData);

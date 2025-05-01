@@ -58,7 +58,7 @@ export default function Navbar() {
     
     // If the image is a relative path, make it absolute
     if (session.user.image.startsWith('/')) {
-      return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${session.user.image}`
+      return `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'}${session.user.image}`
     }
     
     return session.user.image

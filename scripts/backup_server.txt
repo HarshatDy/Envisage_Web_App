@@ -288,33 +288,27 @@ app.post('/api/:collection/aggregate', async (req, res) => {
 // Create a new user
 app.post('/api/users', async (req, res) => {
   try {
-    console.log('POST /api/users - User creation request received');
     await connectMongooseAndInitModels();
     const { User, UserStats } = models;
     
     const { email, name, password, authProvider = 'email', googleId, profilePicture } = req.body;
-    console.log(`Processing user creation for: ${email}, Auth Provider: ${authProvider}`);
     
     // Validate required fields
     if (!email || !name) {
-      console.log('User creation failed: Missing email or name');
       return res.status(400).json({ error: 'Email and name are required' });
     }
     
     if (authProvider === 'email' && !password) {
-      console.log('User creation failed: Missing password for email auth');
       return res.status(400).json({ error: 'Password is required for email authentication' });
     }
     
     if (authProvider === 'google' && !googleId) {
-      console.log('User creation failed: Missing googleId for Google auth');
       return res.status(400).json({ error: 'Google ID is required for Google authentication' });
     }
     
     // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      console.log(`User creation failed: Email ${email} already exists`);
       return res.status(409).json({ error: 'User with this email already exists' });
     }
     
@@ -339,7 +333,6 @@ app.post('/api/users', async (req, res) => {
     // Create and save the user
     const newUser = new User(userData);
     await newUser.save();
-    console.log(`User created successfully with ID: ${newUser._id}`);
     
     // Create initial user stats
     const userStats = new UserStats({
@@ -357,13 +350,11 @@ app.post('/api/users', async (req, res) => {
     });
     
     await userStats.save();
-    console.log(`Initial user stats created for user ${newUser._id}`);
     
     // Remove password from response
     const userResponse = newUser.toObject();
     delete userResponse.password;
     
-    console.log(`User registration complete: ${name} (${email}) - Auth: ${authProvider}`);
     return res.status(201).json({
       message: 'User created successfully',
       user: userResponse,
@@ -936,43 +927,6 @@ app.post('/api/articles/:id/view', async (req, res) => {
   }
 });
 
-// Helper function to determine the appropriate date key based on current time
-function determineNewsDateKey() {
-  const now = new Date();
-  const currentHour = now.getHours();
-  
-  // Format a date as YYYY-MM-DD
-  const formatDateKey = (date, hour) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}_${hour}:00`;
-  };
-  
-  // Clone the current date
-  const currentDate = new Date(now);
-  
-  // Calculate yesterday
-  const yesterdayDate = new Date(now);
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  
-  // Time logic:
-  // 1. Between 6pm (18:00) current day and 6am (06:00) next day: use current day's evening edition
-  // 2. Between 6am (06:00) and 6pm (18:00) current day: use current day's morning edition
-  // 3. Between 6pm (18:00) previous day and 6am (06:00) current day: use previous day's evening edition
-  
-  if (currentHour >= 18) {
-    // Evening to midnight: use current day's 18:00 edition
-    return formatDateKey(currentDate, "18");
-  } else if (currentHour >= 6) {
-    // Morning to evening: use current day's 06:00 edition
-    return formatDateKey(currentDate, "06");
-  } else {
-    // Midnight to morning: use previous day's 18:00 edition
-    return formatDateKey(yesterdayDate, "18");
-  }
-}
-
 // Fetch envisage_web document with newsItems
 app.get('/api/envisage_web', async (req, res) => {
   try {
@@ -992,13 +946,11 @@ app.get('/api/envisage_web', async (req, res) => {
       console.error('Error checking collections:', e);
     }
     
-    // If specific date is provided in query param, use it
-    // Otherwise use the dynamic date based on current time
-    const dateKey = date || determineNewsDateKey();
-    console.log(`Using date key for envisage_web query: ${dateKey}`);
-    
-    // Build the query with the determined date key
-    query = { [`envisage_web.${dateKey}`]: { $exists: true } };
+    // If date is provided, use it as a specific query parameter
+    if (date) {
+      console.log(`Querying envisage_web with specific date: ${date}`);
+      query = { "2025-04-06_18:00": { $exists: true } };
+    }
     
     const document = await fetchSingleDocument(
       'envisage_web',

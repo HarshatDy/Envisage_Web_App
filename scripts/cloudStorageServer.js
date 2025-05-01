@@ -53,6 +53,6 @@ app.get('/health', (req, res) => {
 // Start the server
 app.listen(PORT, () => {
   console.log(`Google Cloud Storage server running on port ${PORT}`);
-  console.log(`- Get weather images: http://localhost:${PORT}/api/weather-images`);
-  console.log(`- Get specific category: http://localhost:${PORT}/api/images/2025-04-06_18:00/17/Weather`);
+  console.log(`- Get weather images: http://127.0.0.1:${PORT}/api/weather-images`);
+  console.log(`- Get specific category: http://127.0.0.1:${PORT}/api/images/2025-04-06_18:00/17/Weather`);
 });

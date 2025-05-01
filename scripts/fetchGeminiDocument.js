@@ -19,7 +19,7 @@ if (fs.existsSync(envPath)) {
 }
 
 // Backend server URL
-const API_URL = process.env.API_URL || 'http://localhost:3001';
+const API_URL = process.env.API_URL || 'http://127.0.0.1:3001';
 
 // Verify environment variables are loaded
 console.log('API_URL:', API_URL);

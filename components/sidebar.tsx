@@ -122,7 +122,7 @@ export default function Sidebar() {
         // Using the same fetch pattern as in news-grid.tsx
         try {
           // Fetch news items from envisage_web collection
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/envisage_web`);
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'}/api/envisage_web`);
           if (response.ok) {
             const result = await response.json();
             console.log(`Sidebar: Loaded envisage_web data`);

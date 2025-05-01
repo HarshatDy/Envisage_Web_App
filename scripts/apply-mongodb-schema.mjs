@@ -47,7 +47,7 @@ const userSchema = new Schema({
   },
   authProvider: {
     type: String,
-    enum: ['email', 'google'],
+    enum: ['email', 'google', 'github'],
     required: true
   },
   googleId: {
@@ -69,7 +69,7 @@ const userSchema = new Schema({
 }, { timestamps: true });
 
 // Compound index for efficient querying
-userSchema.index({ email: 1, authProvider: 1 });
+userSchema.index({ email: 1, authProvider: 1 }, {unique : true});
 
 /**
  * User Statistics Collection Schema

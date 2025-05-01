@@ -1,7 +1,7 @@
-# Envisage
+# SummariseMe
 
 ## Overview
-Envisage is a web application project that helps users visualize and interact with data in an intuitive way.
+SummariseMe is a web application project that helps users visualize and interact with data in an intuitive way.
 
 ## Project Information
 - **Author:** Harshat Dy
@@ -10,7 +10,7 @@ Envisage is a web application project that helps users visualize and interact wi
 
 ## Project Structure
 ```
-V0 - 1 - Envisage/
+V0 - 1 - SummariseMe/
 │
 ├── assets/          # Contains all static assets
 │   ├── css/         # Stylesheet files
@@ -31,7 +31,7 @@ V0 - 1 - Envisage/
 ```
 
 ## Design Approach
-The Envisage project follows a modular design approach with a focus on:
+The SummariseMe project follows a modular design approach with a focus on:
 
 1. **Component-Based Architecture:** Breaking down the UI into reusable components for maintainability and scalability.
 
@@ -53,7 +53,7 @@ The Envisage project follows a modular design approach with a focus on:
 
 2. Navigate to the project directory:
    ```
-   cd "V0 - 1 - Envisage"
+   cd "V0 - 1 - SummariseMe"
    ```
 
 3. Open `index.html` in your browser:

@@ -1,4 +1,4 @@
-Project Name: Envisage
+Project Name: SummariseMe
 
 Description:
 A web-based application designed to provide users with a seamless experience for managing personal tasks and goals.

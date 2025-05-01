@@ -10,7 +10,7 @@ export default function Footer() {
       <div className="container mx-auto px-4 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="space-y-4">
-            <h3 className="text-lg font-bold">Envisage</h3>
+            <h3 className="text-lg font-bold">SummariseMe</h3>
             <p className="text-sm text-muted-foreground">
               Your trusted source for the latest news and updates from around the world.
             </p>
@@ -107,7 +107,7 @@ export default function Footer() {
         <Separator className="my-8" />
 
         <div className="text-center text-sm text-muted-foreground">
-          <p>© {new Date().getFullYear()} Envisage. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} SummariseMe. All rights reserved.</p>
         </div>
       </div>
     </footer>

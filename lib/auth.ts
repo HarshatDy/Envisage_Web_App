@@ -1,10 +1,11 @@
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GitHubProvider from "next-auth/providers/github";
 import bcrypt from "bcrypt";
 import type { NextAuthOptions } from "next-auth";
 
 // Debug flag - set to true to enable debug logging
-const DEBUG_AUTH = process.env.DEBUG_AUTH === "true" || false;
+const DEBUG_AUTH = process.env.DEBUG_AUTH === "false" || false;
 
 // Debug logging helper
 const debugLog = (...args: any[]) => {
@@ -23,6 +24,10 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+    }),
+    GitHubProvider({
+      clientId: process.env.GITHUB_ID || "",
+      clientSecret: process.env.GITHUB_SECRET || "",
     }),
     CredentialsProvider({
       name: "Credentials",
@@ -115,7 +120,12 @@ export const authOptions: NextAuthOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-              query: { email: token.email } 
+              query: { 
+                $and: [
+                  { email: token.email },
+                  { googleId: account.providerAccountId }
+                ]
+              }
             }),
           });
           
@@ -179,8 +189,82 @@ export const authOptions: NextAuthOptions = {
           console.error("Error managing Google user in MongoDB:", error);
         }
       }
+
+      // Handle GitHub sign-in similar to Google
+      if (account?.provider === "github" && token.email) {
+        debugLog("Processing GitHub sign-in for:", token.email);
+        try {
+          // Check if user exists by email and/or already has a GitHub connection
+          const checkResponse = await fetch(`${API_URL}/api/users/query`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              query: { 
+                $and: [
+                  { email: token.email },
+                  { githubId: account.providerAccountId }
+                ]
+              }
+            }),
+          });
+          
+          const checkResult = await checkResponse.json();
+          //console.log("User existence check result:", checkResult ? "Found data" : "No data");
+          
+          if (!checkResult || !Array.isArray(checkResult) || checkResult.length === 0) {
+            // User doesn't exist, create a new one
+            debugLog("Creating new GitHub user:", token.email);
+            console.log("Creating new GitHub user:", token.email);
+            const createResponse = await fetch(`${API_URL}/api/users`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email: token.email,
+                name: token.name || "GitHub User",
+                authProvider: "github",
+                githubId: account.providerAccountId,
+                profilePicture: token.picture || '/images/default-avatar.png'
+              }),
+            });
+            console.log("createResponse:", createResponse);
+            
+            if (createResponse.ok) {
+              const newUser = await createResponse.json();
+              if (newUser && newUser.user && newUser.user._id) {
+                token.id = newUser.user._id;
+              }
+            } else {
+              const errorText = await createResponse.text();
+              debugLog("Failed to create GitHub user:", errorText);
+              console.log("Failed to create GitHub user:", errorText);
+            }
+          } else {
+            // User exists, update profile and last login
+            const existingUser = checkResult[0];
+            token.id = existingUser._id;
+            
+            // Update the user with latest GitHub profile info
+            const updateResponse = await fetch(`${API_URL}/api/users/${existingUser._id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: token.name || existingUser.name,
+                profilePicture: token.picture || existingUser.profilePicture,
+                lastLogin: new Date().toISOString(),
+                // If user didn't have githubId before, add it now
+                ...(existingUser.authProvider !== "github" && { githubId: account.providerAccountId }),
+                ...(existingUser.authProvider === "email" && { authProvider: "multiple" })
+              }),
+            });
+          }
+        } catch (error) {
+          debugLog("Error managing GitHub user in MongoDB:", error);
+          console.error("Error managing GitHub user in MongoDB:", error);
+        }
+      }
       
       debugLog("Final token:", { id: token.id, email: token.email });
+      console.log("Final token:", { id: token.id, email: token.email });
       return token;
     },
     async session({ session, token }) {
@@ -191,15 +275,24 @@ export const authOptions: NextAuthOptions = {
       });
       
       // Make sure user data is carried into the session
+      console.log("SESSION CALLBACK ------------------------------------------------", { session, token });
       if (token && session.user) {
         // Only assign id if it's defined
+        console.log("Assigning user ID to session:-----------------------------------------", token.id);
         if (token.id) {
           session.user.id = token.id;
           debugLog("Set user ID in session:", token.id);
+          console.log("Set user ID in session:", token.id);
         }
         session.user.name = token.name;
         session.user.email = token.email;
         session.user.image = token.picture;
+        
+        debugLog("Updated session with token data:", {
+          id: session.user.id,
+          email: session.user.email,
+          hasImage: !!session.user.image
+        });
       }
       debugLog("Final session user:", session.user);
       return session;

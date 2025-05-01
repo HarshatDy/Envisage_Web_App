@@ -94,11 +94,21 @@ export default function LoginPage() {
     }
   }
 
+  const handleGitHubSignIn = async () => {
+    setIsLoading(true);
+    try {
+      await signIn("github", { callbackUrl: "/" });
+    } catch (error) {
+      console.error("GitHub sign-in error:", error);
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto flex items-center justify-center min-h-[calc(100vh-200px)] px-4 py-12">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">Welcome to Envisage</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to SummariseMe</CardTitle>
           <CardDescription>Sign in to access your personalized news feed</CardDescription>
         </CardHeader>
         <CardContent>
@@ -224,6 +234,20 @@ export default function LoginPage() {
             >
               <Mail className="h-4 w-4 mr-2" />
               Google
+            </Button>
+          </div>
+
+          <div className="flex justify-center mt-4">
+            <Button 
+              variant="outline" 
+              className="w-full flex items-center justify-center gap-2" 
+              onClick={handleGitHubSignIn}
+              disabled={isLoading}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none">
+                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+              </svg>
+              Sign in with GitHub
             </Button>
           </div>
         </CardContent>

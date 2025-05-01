@@ -93,7 +93,7 @@ export default function Navbar() {
             <TooltipProvider>
               <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
-                  <span className="text-2xl font-bold">Envisage</span>
+                  <span className="text-2xl font-bold">SummariseMe</span>
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="italic">"Too much info? We simplify the world's news for you."</p>

@@ -41,8 +41,8 @@ const initializeModels = () => {
     password: { type: String },
     name: { type: String, required: true, trim: true },
     profilePicture: { type: String, default: '/images/default-avatar.png' },
-    authProvider: { type: String, enum: ['email', 'google'], required: true },
-    googleId: { type: String },
+    authProvider: { type: String, enum: ['email', 'google','github'], required: true },
+    authProviderId: { type: String },
     isActive: { type: Boolean, default: true },
     createdAt: { type: Date, default: Date.now },
     lastLogin: { type: Date, default: Date.now }
@@ -292,7 +292,7 @@ app.post('/api/users', async (req, res) => {
     await connectMongooseAndInitModels();
     const { User, UserStats } = models;
     
-    const { email, name, password, authProvider = 'email', googleId, profilePicture } = req.body;
+    const { email, name, password, authProvider = 'email', AuthProviderId, profilePicture } = req.body;
     console.log(`Processing user creation for: ${email}, Auth Provider: ${authProvider}`);
     
     // Validate required fields
@@ -306,13 +306,13 @@ app.post('/api/users', async (req, res) => {
       return res.status(400).json({ error: 'Password is required for email authentication' });
     }
     
-    if (authProvider === 'google' && !googleId) {
+    if (authProvider === 'google' && !AuthProviderId) {
       console.log('User creation failed: Missing googleId for Google auth');
       return res.status(400).json({ error: 'Google ID is required for Google authentication' });
     }
     
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email :email, authProvider: authProvider });
     if (existingUser) {
       console.log(`User creation failed: Email ${email} already exists`);
       return res.status(409).json({ error: 'User with this email already exists' });
@@ -333,7 +333,9 @@ app.post('/api/users', async (req, res) => {
     if (authProvider === 'email') {
       userData.password = await hashPassword(password);
     } else if (authProvider === 'google') {
-      userData.googleId = googleId;
+      userData.googleid = AuthProviderId;
+    } else if (authProvider === 'github') {
+      userData.githubid = AuthProviderId; // Assuming googleId is used for GitHub as well
     }
     
     // Create and save the user

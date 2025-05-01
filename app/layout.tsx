@@ -10,7 +10,7 @@ import SessionWrapper from "@/components/session-wrapper"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Envisage",
+  title: "SummariseMe",
   description: "Stay informed with the latest news and updates",
 }
 

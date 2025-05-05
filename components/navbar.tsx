@@ -6,7 +6,7 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Search, Menu, X, ChevronDown, User, LogOut, Settings } from "lucide-react"
+import { Search, Home, X, ChevronDown, User, LogOut, Settings } from "lucide-react"
 import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,7 +38,6 @@ const categories = [
 export default function Navbar() {
   const router = useRouter()
   const { data: session, status } = useSession()
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
   const handleSearch = (e: React.FormEvent) => {
@@ -69,31 +68,20 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between" style={{ fontFamily: "'Unbounded', sans-serif" }}>
-        {/* Mobile menu button */}
-        <div className="md:hidden">
-          <button
-            className="inline-flex items-center justify-center rounded-md p-2 text-foreground"
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-          >
-            <span className="sr-only">Open main menu</span>
-            {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
-        </div>
-
-        {/* Left section - Simple Home link */}
+        {/* Left section - Home link (desktop only) */}
         <div className="hidden md:flex items-center space-x-4">
           <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
             Home
           </Link>
         </div>
 
-        {/* Center - Logo */}
-        <div className="absolute left-1/2 transform -translate-x-1/2">
+        {/* Logo - Centered on desktop, left on mobile */}
+        <div className="absolute left-1/2 transform -translate-x-1/2 max-md:relative max-md:left-0 max-md:transform-none">
           <Link href="/" className="flex items-center space-x-2">
             <TooltipProvider>
               <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
-                  <span className="text-2xl font-bold">SummariseMe</span>
+                  <span className="text-xl font-bold">SummariseMe</span>
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="italic">"Too much info? We simplify the world's news for you."</p>
@@ -107,12 +95,14 @@ export default function Navbar() {
         <div className="flex items-center space-x-4">
           <Link 
             href="/creator" 
-            className="hidden md:block hover:text-primary transition-colors"
+            className="hidden lg:block hover:text-primary transition-colors"
             style={{ fontFamily: "'Bungee Spice', sans-serif" }}
           >
             MEET THE CREATOR
           </Link>
-          <ThemeToggle />
+          <div className="hidden md:block">
+            <ThemeToggle />
+          </div>
           
           {status === "authenticated" && session ? (
             <DropdownMenu>
@@ -174,61 +164,15 @@ export default function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/login">Login</Link>
+            <Button variant="outline" size="sm" asChild className="h-9 px-4 text-sm">
+              <Link href="/login">
+                <span className="hidden lg:inline">Login</span>
+                <span className="lg:hidden" style={{ fontFamily: "'Bungee Spice', sans-serif" }}>LOGIN</span>
+              </Link>
             </Button>
           )}
         </div>
       </div>
-
-      {/* Mobile menu */}
-      {isMenuOpen && (
-        <div className="md:hidden">
-          <div className="space-y-1 px-2 pb-3 pt-2">
-            <form onSubmit={handleSearch} className="flex items-center space-x-2 mb-4 px-3">
-              <Input
-                type="search"
-                placeholder="Search news..."
-                className="w-full"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <Button type="submit" size="icon" variant="ghost">
-                <Search className="h-4 w-4" />
-                <span className="sr-only">Search</span>
-              </Button>
-            </form>
-
-            <Link
-              href="/"
-              className="block rounded-md px-3 py-2 text-base font-medium hover:bg-accent hover:text-accent-foreground"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Home
-            </Link>
-
-            <Link
-              href="/trending"
-              className="block rounded-md px-3 py-2 text-base font-medium hover:bg-accent hover:text-accent-foreground"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Trending
-            </Link>
-
-            <div className="px-3 py-2 text-base font-medium">Categories:</div>
-            {categories.map((category) => (
-              <Link
-                key={category.name}
-                href={category.href}
-                className="block rounded-md px-6 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                {category.name}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
     </header>
   )
 }

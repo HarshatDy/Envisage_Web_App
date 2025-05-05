@@ -40,16 +40,16 @@ export default function WelcomePopup() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-background/80 backdrop-blur-sm overflow-y-auto pt-8 pb-8"
         >
           <motion.div
             initial={{ scale: 0.9, y: 20 }}
             animate={{ scale: 1, y: 0 }}
             exit={{ scale: 0.9, y: 20 }}
-            className="w-full max-w-2xl"
+            className="w-full max-w-2xl my-auto"
           >
-            <Card className="border-primary/20 shadow-lg">
-              <CardHeader className="pb-4 text-center relative">
+            <Card className="border-primary/20 shadow-lg max-h-[90vh] overflow-y-auto">
+              <CardHeader className="pb-4 text-center relative" style={{ fontFamily: "'Unbounded', sans-serif" }}>
                 <Button variant="ghost" size="icon" className="absolute right-4 top-4" onClick={handleClose}>
                   <X className="h-4 w-4" />
                   <span className="sr-only">Close</span>

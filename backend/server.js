@@ -1454,6 +1454,7 @@ app.listen(PORT, hostname, () => {
     console.log(`ℹ️  Running in development mode - accepting remote connections`);
   } else {
     console.log(`ℹ️  Running in production mode - only accepting local connections`);
+    console.log(`MONGO URL : ${process.env.MONGODB_URI}`);
   }
   
   console.log('\n📡 API endpoints:');

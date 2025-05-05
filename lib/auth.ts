@@ -142,7 +142,7 @@ export const authOptions: NextAuthOptions = {
                 email: token.email,
                 name: token.name || "Google User",
                 authProvider: "google",
-                googleId: account.providerAccountId,
+                AuthProviderId: account.providerAccountId,
                 profilePicture: token.picture || '/images/default-avatar.png'
               }),
             });

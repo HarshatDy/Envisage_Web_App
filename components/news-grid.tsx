@@ -44,6 +44,16 @@ interface NewsItem {
   images?: string[]; // Add the new images array property
 }
 
+// Add this interface near the top of the file with other interfaces
+interface SearchResult {
+  id: number;
+  title: string;
+  summary: string;
+  category: string;
+  slug: string;
+  image: string;
+}
+
 // Sample news data
 const initialNewsItems = [
   {
@@ -170,6 +180,10 @@ export default function NewsGrid() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [totalReadingTime, setTotalReadingTime] = useState(0);
+
+  // Add these new functions after the existing state declarations
+  const [filteredNewsItems, setFilteredNewsItems] = useState<NewsItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Calculate total reading time of unread articles
   useEffect(() => {
@@ -618,24 +632,41 @@ const recordArticleInteraction = async (articleId: string, completed: boolean) =
 
   // Listen for custom events from hero section
   useEffect(() => {
-    const handleOpenNewsCard = (event: CustomEvent<{slug: string, title: string}>) => {
-      const { slug } = event.detail;
-      console.log('🔔 news-grid: Received openNewsCard event for:', slug);
+    const handleOpenNewsCard = (event: CustomEvent<{slug: string, title: string, id: number}>) => {
+      const { slug, title, id } = event.detail;
+      console.log('🔔 news-grid: Received openNewsCard event:', {
+        slug,
+        title,
+        id,
+        totalNewsItems: newsItems.length
+      });
       
-      // Find the news item with the matching slug
-      const newsItem = newsItems.find(item => item.slug === slug);
+      // Find the news item by ID first, then fallback to slug
+      const newsItem = newsItems.find(item => item.id === id) || newsItems.find(item => item.slug === slug);
       
       if (newsItem) {
-        console.log('✅ news-grid: Found matching news item with ID:', newsItem.id);
+        console.log('✅ news-grid: Found matching news item:', {
+          id: newsItem.id,
+          title: newsItem.title,
+          slug: newsItem.slug
+        });
         setExpandedCardId(newsItem.id);
         
         // Scroll the news item into view if it's not visible
         const newsElement = document.getElementById(`news-item-${newsItem.id}`);
         if (newsElement) {
+          console.log('✅ news-grid: Scrolling to news item element');
           newsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          console.warn('⚠️ news-grid: Could not find news item element in DOM');
         }
       } else {
-        console.log('⚠️ news-grid: No matching news item found for slug:', slug);
+        console.warn('⚠️ news-grid: No matching news item found:', {
+          requestedId: id,
+          requestedSlug: slug,
+          availableIds: newsItems.map(item => item.id),
+          availableSlugs: newsItems.map(item => item.slug)
+        });
       }
     };
 
@@ -1097,6 +1128,87 @@ const markAsRead = async (id: number, completed: boolean = false) => {
     return item.readTime || `${Math.floor(item.summary.length / 300) + 2} min`;
   };
 
+  // Add the search function
+  const searchNewsItems = (query: string) => {
+    if (!query.trim()) {
+      setFilteredNewsItems([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const searchTerms = query.toLowerCase().split(' ');
+    
+    const results = newsItems.filter(item => {
+      const searchableText = `${item.title} ${item.summary} ${item.category}`.toLowerCase();
+      return searchTerms.every(term => searchableText.includes(term));
+    });
+
+    setFilteredNewsItems(results);
+    setIsSearching(true);
+  };
+
+  // Update the handleSearchResults function to convert SearchResult to NewsItem
+  const handleSearchResults = (results: SearchResult[]) => {
+    // Convert SearchResult to NewsItem by finding matching items in newsItems
+    const matchingItems = results.map(result => 
+      newsItems.find(item => item.id === result.id)
+    ).filter((item): item is NewsItem => item !== undefined);
+    
+    setFilteredNewsItems(matchingItems);
+    setIsSearching(true);
+  };
+
+  // Add the navigate to news item function
+  const navigateToNewsItem = (slug: string) => {
+    const newsItem = newsItems.find(item => item.slug === slug);
+    if (newsItem) {
+      setExpandedCardId(newsItem.id);
+      // Scroll to the news item
+      const element = document.getElementById(`news-item-${newsItem.id}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  };
+
+  // Update the return statement to use filteredNewsItems when searching
+  const displayItems = isSearching ? filteredNewsItems : newsItems;
+
+  // Add this useEffect for search event listeners
+  useEffect(() => {
+    const handleNewsSearch = (event: CustomEvent<SearchResult[]>) => {
+      handleSearchResults(event.detail);
+    };
+
+    const handleNewsSelect = (event: CustomEvent<{slug: string}>) => {
+      navigateToNewsItem(event.detail.slug);
+    };
+
+    document.addEventListener('newsSearch', handleNewsSearch as EventListener);
+    document.addEventListener('newsSelect', handleNewsSelect as EventListener);
+
+    return () => {
+      document.removeEventListener('newsSearch', handleNewsSearch as EventListener);
+      document.removeEventListener('newsSelect', handleNewsSelect as EventListener);
+    };
+  }, []);
+
+  // Add this effect after the existing useEffect hooks
+  useEffect(() => {
+    // Dispatch news items when they're loaded
+    const newsItemsEvent = new CustomEvent('newsItemsLoaded', { 
+      detail: newsItems.map(item => ({
+        id: item.id,
+        title: item.title,
+        summary: item.summary,
+        category: item.category,
+        slug: item.slug,
+        image: item.image
+      }))
+    });
+    document.dispatchEvent(newsItemsEvent);
+  }, [newsItems]);
+
   return (
     <>
       <div className="flex justify-between items-center mb-6">
@@ -1113,7 +1225,7 @@ const markAsRead = async (id: number, completed: boolean = false) => {
       {/* Below md: single vertical column */}
       {/* md and up: multi-column, multi-row grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:auto-rows-[minmax(150px,auto)] lg:grid-cols-3"> {/* Changed base to grid-cols-1, removed flow/overflow/pb */}
-        {newsItems.map((news) => (
+        {displayItems.map((news) => (
           <motion.div
             key={news.id}
             // Base styles for small screens (single column, full width)

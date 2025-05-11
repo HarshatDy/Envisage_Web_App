@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -24,6 +24,27 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { SearchBar } from "@/components/SearchBar"
+
+// Add this interface near the top of the file
+interface SearchResult {
+  id: number;
+  title: string;
+  summary: string;
+  category: string;
+  slug: string;
+  image: string;
+}
+
+// Add this interface near the top with other interfaces
+interface NewsItem {
+  id: number;
+  title: string;
+  summary: string;
+  category: string;
+  slug: string;
+  image: string;
+}
 
 const categories = [
   { name: "Politics", href: "/category/politics" },
@@ -39,11 +60,28 @@ export default function Navbar() {
   const router = useRouter()
   const { data: session, status } = useSession()
   const [searchQuery, setSearchQuery] = useState("")
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([])
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Handle search functionality
-    console.log("Searching for:", searchQuery)
+  // Add this effect to listen for news items
+  useEffect(() => {
+    const handleNewsItemsLoaded = (event: CustomEvent<NewsItem[]>) => {
+      setNewsItems(event.detail)
+    }
+
+    document.addEventListener('newsItemsLoaded', handleNewsItemsLoaded as EventListener)
+    return () => {
+      document.removeEventListener('newsItemsLoaded', handleNewsItemsLoaded as EventListener)
+    }
+  }, [])
+
+  const handleSearch = (results: SearchResult[]) => {
+    // You can add additional search handling logic here if needed
+    console.log('Search results:', results)
+  }
+
+  const handleSelect = (slug: string) => {
+    // Navigate to the selected news item
+    window.location.href = `/news/${slug}`
   }
 
   const handleSignOut = async () => {
@@ -69,9 +107,16 @@ export default function Navbar() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between" style={{ fontFamily: "'Unbounded', sans-serif" }}>
         {/* Left section - Home link (desktop only) */}
-        <div className="hidden md:flex items-center space-x-4">
-          <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
+        <div className="hidden md:flex items-center space-x-8">
+          <Link href="/" className="text-base font-medium transition-colors hover:text-primary">
             Home
+          </Link>
+          <Link 
+            href="/creator" 
+            className="text-base hover:text-primary transition-colors"
+            style={{ fontFamily: "'Bungee Spice', sans-serif" }}
+          >
+            MEET THE CREATOR
           </Link>
         </div>
 
@@ -91,15 +136,13 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* Right section - Creator Link, Theme, Login/Profile */}
+        {/* Right section - Theme, Login/Profile */}
         <div className="flex items-center space-x-4">
-          <Link 
-            href="/creator" 
-            className="hidden lg:block hover:text-primary transition-colors"
-            style={{ fontFamily: "'Bungee Spice', sans-serif" }}
-          >
-            MEET THE CREATOR
-          </Link>
+          <SearchBar 
+            onSearch={handleSearch}
+            onSelect={handleSelect}
+            newsItems={newsItems}
+          />
           <div className="hidden md:block">
             <ThemeToggle />
           </div>

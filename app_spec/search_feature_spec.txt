@@ -1,0 +1,216 @@
+# Search Feature Technical Specification
+
+## Overview
+The search feature is a real-time, client-side search implementation that provides instant filtering and navigation capabilities for news items. It uses a combination of React hooks, state management, and UI components to deliver a smooth user experience.
+
+## Data Structures
+
+### 1. SearchResult Interface
+```typescript
+interface SearchResult {
+  id: number;
+  title: string;
+  summary: string;
+  category: string;
+  slug: string;
+  image: string;
+}
+```
+
+### 2. Component Props
+```typescript
+interface SearchBarProps {
+  onSearch: (results: SearchResult[]) => void;
+  onSelect: (slug: string) => void;
+  newsItems: SearchResult[];
+}
+```
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant SearchBar
+    participant State
+    participant SearchLogic
+    participant UI
+
+    User->>SearchBar: Types in search box
+    SearchBar->>State: setQuery(value)
+    SearchBar->>State: setIsSearching(true)
+    SearchBar->>SearchLogic: Debounce (300ms)
+    SearchLogic->>SearchLogic: Split search terms
+    SearchLogic->>SearchLogic: Filter newsItems
+    SearchLogic->>SearchLogic: Sort results
+    SearchLogic->>State: setResults(filteredResults)
+    SearchLogic->>State: setIsSearching(false)
+    State->>UI: Re-render with results
+    UI->>User: Display results
+```
+
+## Technical Implementation Details
+
+### 1. State Management
+- Uses React's `useState` for local state management
+- Key states:
+  - `open`: Controls search dialog visibility
+  - `query`: Current search input
+  - `results`: Filtered search results
+  - `isSearching`: Loading state indicator
+
+### 2. Performance Optimizations
+- **Debouncing**: 300ms delay to prevent excessive searches
+- **Memoization**: `useMemo` for results list to prevent unnecessary re-renders
+- **Callback Optimization**: `useCallback` for event handlers
+
+### 3. Search Algorithm
+```typescript
+const searchTerms = value.toLowerCase().split(' ');
+const filteredResults = newsItems.filter(item => {
+  const searchableText = `
+    ${item.title} 
+    ${item.summary} 
+    ${item.category}
+  `.toLowerCase();
+  return searchTerms.every(term => searchableText.includes(term));
+});
+```
+
+### 4. UI Components
+- `CommandDialog`: Modal search interface
+- `CommandInput`: Search input field
+- `CommandList`: Results container
+- `CommandGroup`: Results grouping
+- `CommandItem`: Individual result item
+
+## Issues Found and Fixed
+
+### 1. Results Not Displaying
+**Issue**: Search results were found but not displayed in UI  
+**Root Cause**: Missing `value` prop in `CommandItem` components  
+**Fix**: Added required `value` prop to `CommandItem`  
+```typescript
+<CommandItem
+  key={result.id}
+  value={result.title}
+  onSelect={() => {
+    onSelect(result.slug);
+    setOpen(false);
+  }}
+>
+```
+
+### 2. State Synchronization
+**Issue**: Race condition in search state updates  
+**Root Cause**: Asynchronous state updates not properly handled  
+**Fix**: Made search function async and added proper state management  
+```typescript
+searchTimeoutRef.current = setTimeout(async () => {
+  await performSearch(value);
+  setIsSearching(false);
+}, 300);
+```
+
+### 3. Performance Issues
+**Issue**: Unnecessary re-renders of results list  
+**Root Cause**: Missing memoization  
+**Fix**: Implemented `useMemo` for results list  
+```typescript
+const resultsList = useMemo(() => {
+  return results.map((result) => (
+    <CommandItem ... />
+  ));
+}, [results, onSelect]);
+```
+
+### 4. UI Filtering Issue
+**Issue**: Only a subset of search results (e.g., Lifestyle and Public Safety) was displayed in the UI, even though the search logic found more results.  
+**Root Cause**: The built-in filtering logic of shadcn/ui's `CommandList` and `CommandItem` components was filtering items based on the `value` prop, which only included the title.  
+**Fix**: Updated the `value` prop of each `CommandItem` to include all searchable fields (title, summary, and category) so that the built-in filter matches the custom search logic.  
+```typescript
+<CommandItem
+  key={result.id}
+  value={`${result.title} ${result.summary} ${result.category}`}
+  onSelect={() => {
+    onSelect(result.slug);
+    setOpen(false);
+  }}
+>
+```
+
+### 5. Search Result Click Handling
+**Issue**: Clicking on search results was not properly opening the corresponding news item in the grid.  
+**Root Cause**: Conflict between `onSelect` prop and `openNewsCard` event handling.  
+**Fix**: Removed the `onSelect` prop call and exclusively used the `openNewsCard` event for better consistency.  
+```typescript
+<CommandItem
+  key={result.id}
+  value={`${result.title} ${result.summary} ${result.category}`}
+  onSelect={() => {
+    console.log('🔍 Selected result:', {
+      title: result.title,
+      slug: result.slug,
+      id: result.id
+    });
+    const event = new CustomEvent('openNewsCard', {
+      detail: {
+        id: result.id,
+        slug: result.slug,
+        title: result.title
+      }
+    });
+    document.dispatchEvent(event);
+    setOpen(false);
+  }}
+  className="cursor-pointer"
+>
+```
+
+### 6. News Item Matching
+**Issue**: When clicking a search result, sometimes the wrong news item would be opened.  
+**Root Cause**: Matching was only using slugs, which could be undefined or duplicated.  
+**Fix**: Implemented a two-step matching process that first tries to match by ID, then falls back to slug matching.  
+```typescript
+// In NewsGrid component
+const newsItem = newsItems.find(item => item.id === id) || newsItems.find(item => item.slug === slug);
+```
+
+### 7. Search Result UI Enhancement
+**Issue**: Search results were not visually indicating they were clickable.  
+**Root Cause**: Missing cursor pointer and proper styling.  
+**Fix**: Added cursor-pointer class and improved the layout of search result items.  
+```typescript
+<CommandItem
+  className="cursor-pointer"
+>
+  <div className="flex items-center gap-2 w-full">
+    <img 
+      src={result.image} 
+      alt={result.title}
+      className="h-8 w-8 rounded object-cover"
+    />
+    <div className="flex flex-col flex-1">
+      <p className="font-medium">{result.title}</p>
+      <p className="text-sm text-muted-foreground">{result.category}</p>
+      <p className="text-xs text-muted-foreground line-clamp-1">{result.summary}</p>
+    </div>
+  </div>
+</CommandItem>
+```
+
+## Technical Stack
+
+### Frontend
+- React 18+
+- TypeScript
+- Tailwind CSS
+- shadcn/ui Components
+
+### Key Dependencies
+- `lucide-react`: Icons
+- `@/components/ui/*`: Custom UI components
+- React Hooks: `useState`, `useEffect`, `useCallback`, `useMemo`, `useRef`
+
+## Performance Metrics
+- Search response time: < 300ms (debounced) 

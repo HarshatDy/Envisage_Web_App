@@ -796,36 +796,147 @@ app.post('/api/users/:userId/interactions', async (req, res) => {
         if (timeSpent) userStats.totalTimeSpent += timeSpent;
         userStats.lastActivity = new Date();
         
-        // For envisage_web items, extract the category directly
-        // If articleId is in format docId_itemId, parse the newsItemId and get category from envisage_web
+        // Get the article's category and update category engagement
+        let category;
+        
         if (articleId.includes('_')) {
+          // For envisage_web items, extract the category directly
           try {
             const [docId, itemId] = articleId.split('_');
+            console.log('Extracting category for envisage_web article:', { docId, itemId });
             
             const { db } = await connectToDatabase(
               process.env.MONGODB_URI,
               process.env.MONGODB_DB
             );
+
+            // First try to find the document using the date-based query
+            const dateKey = determineNewsDateKey();
+            console.log('Using date key for query:', dateKey);
             
-            const doc = await db.collection('envisage_web').findOne(
-              { _id: docId, "newsItems.id": parseInt(itemId) },
-              { projection: { "newsItems.$": 1 } }
+            let doc = await db.collection('envisage_web').findOne(
+              { [`envisage_web.${dateKey}`]: { $exists: true } }
             );
             
-            if (doc && doc.newsItems && doc.newsItems[0]) {
-              const category = doc.newsItems[0].category;
-              if (category) {
-                const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
-                
-                userStats.categoryEngagement.set(category, {
-                  timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
-                  articlesRead: existingEngagement.articlesRead + 1
+            console.log('Initial query result:', {
+              found: !!doc,
+              dateKey,
+              docKeys: doc ? Object.keys(doc) : []
+            });
+
+            if (doc && doc.envisage_web) {
+              // Log the full envisage_web structure for debugging
+              console.log('envisage_web structure:', {
+                dateKey,
+                hasDateKey: !!doc.envisage_web[dateKey],
+                dateKeyStructure: doc.envisage_web[dateKey] ? Object.keys(doc.envisage_web[dateKey]) : [],
+                fullStructure: JSON.stringify(doc.envisage_web[dateKey], null, 2)
+              });
+
+              // Get all date keys from envisage_web
+              const dateKeys = Object.keys(doc.envisage_web);
+              console.log('Available date keys:', dateKeys);
+              
+              // Try each date key until we find the news item
+              for (const dateKey of dateKeys) {
+                const dateData = doc.envisage_web[dateKey];
+                console.log(`Checking date key ${dateKey}:`, {
+                  hasDateData: !!dateData,
+                  dateDataKeys: dateData ? Object.keys(dateData) : [],
+                  hasCategories: dateData && dateData.categories ? true : false
                 });
+
+                // Check if we have categories in the date data
+                if (dateData && dateData.categories) {
+                  // Look through each category for the news item
+                  for (const [categoryName, categoryData] of Object.entries(dateData.categories)) {
+                    console.log(`Checking category ${categoryName}:`, {
+                      hasArticles: !!categoryData.articles,
+                      articleCount: categoryData.articles ? categoryData.articles.length : 0
+                    });
+
+                    if (categoryData.articles && Array.isArray(categoryData.articles)) {
+                      const article = categoryData.articles.find(a => a.id === parseInt(itemId));
+                      if (article) {
+                        category = categoryName;
+                        console.log('Found category in article:', {
+                          dateKey,
+                          itemId,
+                          category,
+                          article: {
+                            id: article.id,
+                            title: article.title,
+                            category: categoryName
+                          }
+                        });
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                if (category) break; // Exit if we found the category
               }
+            } else {
+              // If document not found, try to list available documents
+              const sampleDocs = await db.collection('envisage_web')
+                .find({}, { projection: { _id: 1, "envisage_web": 1 } })
+                .limit(5)
+                .toArray();
+              console.log('Sample available documents:', sampleDocs.map(doc => ({
+                _id: doc._id,
+                hasEnvisageWeb: !!doc.envisage_web,
+                dateKeys: doc.envisage_web ? Object.keys(doc.envisage_web) : [],
+                sampleStructure: doc.envisage_web ? 
+                  Object.keys(doc.envisage_web).map(key => ({
+                    dateKey: key,
+                    hasCategories: !!doc.envisage_web[key].categories,
+                    categoryNames: doc.envisage_web[key].categories ? 
+                      Object.keys(doc.envisage_web[key].categories) : []
+                  })) : []
+              })));
             }
           } catch (error) {
             console.error('Error processing envisage_web category:', error);
           }
+        } else {
+          // For regular articles, get category from the Article model
+          try {
+            const { Article } = models;
+            const article = await Article.findById(articleId);
+            if (article) {
+              category = article.category;
+              console.log('Found regular article category:', {
+                articleId,
+                category,
+                title: article.title
+              });
+            }
+          } catch (error) {
+            console.error('Error getting article category:', error);
+          }
+        }
+        
+        // Update category engagement if we found a category
+        if (category) {
+          // Ensure category is a string and trim any whitespace
+          category = String(category).trim();
+          console.log('Using category for engagement:', category);
+          
+          const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
+          console.log('Existing engagement for category:', existingEngagement);
+          
+          userStats.categoryEngagement.set(category, {
+            timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
+            articlesRead: existingEngagement.articlesRead + 1
+          });
+          
+          console.log('Updated category engagement:', {
+            category,
+            newStats: userStats.categoryEngagement.get(category)
+          });
+        } else {
+          console.log('No category found for article:', articleId);
         }
         
         // Update daily stats
@@ -1206,12 +1317,8 @@ app.post('/api/envisage_web/view', async (req, res) => {
         console.log('Sample document IDs:', allDocs.map(doc => String(doc._id)));
         
         return res.status(404).json({ 
-          error: 'Document not found',
-          details: { 
-            documentId,
-            searchedIds: [String(documentObjectId), documentId],
-            sampleIds: allDocs.map(doc => String(doc._id))
-          }
+          error: 'Document not found and failed to retrieve sample IDs',
+          details: { documentId, searchedIds: [String(documentObjectId), documentId], sampleIds: allDocs.map(doc => String(doc._id)) }
         });
       } catch (error) {
         console.error(`Error retrieving sample document IDs:`, error);

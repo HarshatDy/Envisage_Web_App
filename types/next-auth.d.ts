@@ -8,6 +8,7 @@ declare module "next-auth" {
   interface Session {
     user: {
       id?: string  // Make id optional
+      createdAt?: string // Add createdAt field
     } & DefaultSession["user"]
   }
 }
@@ -18,5 +19,6 @@ declare module "next-auth/jwt" {
   interface JWT {
     id?: string
     picture?: string
+    createdAt?: string // Add createdAt field
   }
 }

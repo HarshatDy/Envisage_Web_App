@@ -44,6 +44,11 @@ export async function fetchFromCollection(collectionName, query = {}, options = 
   return db.collection(collectionName).find(query, options).toArray();
 }
 
+export async function fetchAllFromCollection(collectionName, uri, dbName) {
+  const { db } = await connectToDatabase(uri, dbName);
+  return db.collection(collectionName).find().toArray();
+}
+
 // Fetch a single document from a collection
 export async function fetchSingleDocument(collectionName, query = {}, uri, dbName) {
   const { db } = await connectToDatabase(uri, dbName);

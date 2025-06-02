@@ -7,7 +7,7 @@ import cors from 'cors';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
 import { ObjectId } from 'mongodb';
-import { connectToDatabase, fetchFromCollection, fetchPaginatedData, fetchSingleDocument, fetchWithAggregation } from './lib/mongodb.js';
+import { connectToDatabase, fetchFromCollection, fetchPaginatedData, fetchSingleDocument, fetchWithAggregation, fetchAllFromCollection } from './lib/mongodb.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -147,6 +147,136 @@ app.get('/api/collections', async (req, res) => {
   } catch (error) {
     console.error('Error fetching collections:', error);
     res.status(500).json({ error: 'Failed to fetch collections' });
+  }
+});
+
+// Newsletter subscriber count route
+app.get('/api/newsletter/subscriber-count', async (req, res) => {
+  console.log('📊 GET /api/newsletter/subscriber-count');
+  try {
+    const db = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    const count = await db.collection('newslettersubscriptions').countDocuments({ status: 'active' });
+    console.log('✅ Subscriber count:', count);
+    res.json({ count });
+  } catch (error) {
+    console.error('❌ Error getting subscriber count:', error);
+    res.status(500).json({ error: 'Failed to get subscriber count' });
+  }
+});
+
+// Newsletter subscription route
+app.post('/api/newsletter/subscribe', async (req, res) => {
+  console.log('📧 POST /api/newsletter/subscribe');
+  try {
+    const { email, preferences } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const { db } = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    
+    // First check if the subscription already exists
+    const existingSubscription = await db.collection('newslettersubscriptions').findOne({ 
+      email: email.toLowerCase() 
+    });
+
+    if (existingSubscription) {
+      if (existingSubscription.status === 'active') {
+        return res.json({ 
+          success: true,
+          message: 'This email is already subscribed to our newsletter. Thanks for being part of our community!',
+          isNewSubscription: false
+        });
+      } else {
+        // If subscription exists but is not active, reactivate it
+        await db.collection('newslettersubscriptions').updateOne(
+          { email: email.toLowerCase() },
+          { 
+            $set: { 
+              status: 'active',
+              preferences: preferences || existingSubscription.preferences,
+              updatedAt: new Date()
+            }
+          }
+        );
+        return res.json({
+          success: true,
+          message: 'Welcome back! Your newsletter subscription has been reactivated.',
+          isNewSubscription: false
+        });
+      }
+    }
+
+    // If no existing subscription, create a new one
+    const result = await db.collection('newslettersubscriptions').insertOne({
+      email: email.toLowerCase(),
+      preferences: preferences || {
+        categories: [],
+        frequency: 'daily',
+        timeOfDay: 'morning',
+        format: 'html'
+      },
+      status: 'active',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    console.log('✅ New subscription created');
+    res.json({ 
+      success: true, 
+      message: 'Thank you for subscribing to our newsletter! Welcome to our community.',
+      isNewSubscription: true
+    });
+  } catch (error) {
+    console.error('❌ Error subscribing to newsletter:', error);
+    res.status(500).json({ error: 'Failed to subscribe to newsletter' });
+  }
+});
+
+// Newsletter popup state route
+app.get('/api/newsletter/popup-state/:userId', async (req, res) => {
+  console.log('🔍 GET /api/newsletter/popup-state/:userId');
+  try {
+    const { userId } = req.params;
+    const db = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    
+    const interaction = await db.collection('newsletterpopupinteractions')
+      .findOne({ userId });
+
+    const canShow = !interaction || 
+      (interaction.lastAction === 'maybe_later' && 
+       new Date() > new Date(interaction.cooldownUntil));
+
+    console.log('📊 Can show popup:', canShow);
+    res.json({ canShow });
+  } catch (error) {
+    console.error('❌ Error getting popup state:', error);
+    res.status(500).json({ error: 'Failed to get popup state' });
+  }
+});
+
+// Newsletter popup interaction route
+app.post('/api/newsletter/popup-interaction', async (req, res) => {
+  console.log('🖱️ POST /api/newsletter/popup-interaction');
+  try {
+    const { userId, action } = req.body;
+    if (!userId || !action) {
+      return res.status(400).json({ error: 'User ID and action are required' });
+    }
+
+    const db = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    await db.collection('newsletterpopupinteractions').insertOne({
+      userId,
+      action,
+      timestamp: new Date(),
+      cooldownUntil: action === 'maybe_later' ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null
+    });
+
+    console.log('✅ Popup interaction logged');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Error recording popup interaction:', error);
+    res.status(500).json({ error: 'Failed to record popup interaction' });
   }
 });
 
@@ -1549,6 +1679,64 @@ app.get('/api/envisage_web/all', async (req, res) => {
   }
 });
 
+//----------------------------------------------------------------------------------------
+
+app.get('/api/blogs', async (req, res) => {
+  try {
+    const documents = await fetchAllFromCollection(
+      'blogs',
+      process.env.MONGODB_URI,
+      'HarshatDy_Blogs'
+    );
+    
+    if (!documents || documents.length === 0) {
+      return res.status(404).json({ message: 'No Blogs found' });
+    }
+    
+    // Return all the blogs for the portfolio
+    return res.status(201).json({
+      documents
+    });
+    
+    // return res.status(404).json({
+    //   message: 'No blogs found for the portfolio',
+    //   availableDates: documents[0].Summary ? Object.keys(documents[0].Summary) : []
+    // });
+  } catch (error) {
+    console.error('Error fetching blogs for the portfolio:', error);
+    return res.status(500).json({ error: 'Failed to fetch blogs for portfolio' });
+  }
+});
+
+
+app.get('/api/hero_blogs', async (req, res) => {
+  try {
+    const documents = await fetchAllFromCollection(
+      'hero_blogs', 
+      process.env.MONGODB_URI,
+      'HarshatDy_Blogs'
+    );
+    
+    if (!documents || documents.length === 0) {
+      return res.status(404).json({ message: 'No Blogs found' });
+    }
+
+    console.log("Returned Documents", documents)
+    
+    // Return all the blogs for the portfolio
+    return res.status(201).json({
+      documents
+    });
+    // return res.status(404).json({
+    //   message: 'No blogs found for the portfolio',
+    //   availableDates: documents[0].Summary ? Object.keys(documents[0].Summary) : []
+    // });
+  } catch (error) {
+    console.error('Error fetching blogs for the portfolio:', error);
+    return res.status(500).json({ error: 'Failed to fetch blogs for portfolio' });
+  }
+});
+
 // Start server - binding to 127.0.0.1 for security in production, or all interfaces in development
 const isDevelopment = process.env.NODE_ENV === 'development';
 const hostname = isDevelopment ? '0.0.0.0' : '127.0.0.1';
@@ -1588,6 +1776,6 @@ app.listen(PORT, hostname, () => {
   console.log(`   GET  /api/envisage_web/all       - Get all documents from envisage_web collection`);
   
   console.log('\n💡 For frontend, configure .env.local with:');
-  console.log(`   NEXT_PUBLIC_API_URL=http://127.0.0.1:${PORT}`);
+  console.log(`   NEXT_PUBLIC_API_URL=${hostname}:${PORT}`);
   console.log('\n📋 Press Ctrl+C to stop the server');
 });

@@ -157,6 +157,13 @@ interface HeroNewsItem {
   slug: string;
 }
 
+// Add this type declaration at the top of the file, after the imports
+declare global {
+  interface Window {
+    __newsItemsCache?: string;
+  }
+}
+
 export default function NewsGrid() {
   const [newsItems, setNewsItems] = useState<NewsItem[]>(initialNewsItems)
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null)
@@ -288,7 +295,7 @@ export default function NewsGrid() {
                   isBookmarked: false,
                   size: size,
                   type: "article",
-                  readTime: `${Math.floor((item.summary || "").length / 300) + 2} min`,
+                  readTime: `${Math.floor((item.summary || "").length / 1000) + 1} min`,
                   images: item.images // Store the original images array if needed later
                 };
                 
@@ -1195,19 +1202,79 @@ const markAsRead = async (id: number, completed: boolean = false) => {
 
   // Add this effect after the existing useEffect hooks
   useEffect(() => {
-    // Dispatch news items when they're loaded
-    const newsItemsEvent = new CustomEvent('newsItemsLoaded', { 
-      detail: newsItems.map(item => ({
-        id: item.id,
-        title: item.title,
-        summary: item.summary,
-        category: item.category,
-        slug: item.slug,
-        image: item.image
-      }))
-    });
-    document.dispatchEvent(newsItemsEvent);
+    // Only dispatch if we have items
+    if (newsItems.length > 0) {
+      console.log('📡 NewsGrid: Preparing to dispatch newsItemsLoaded event')
+      console.log('📊 NewsGrid: Number of items to dispatch:', newsItems.length)
+      
+      // Create a cache key based on the items
+      const cacheKey = newsItems.map(item => `${item.id}-${item.category}`).join('|')
+      
+      // Check if we've already dispatched these items
+      if (window.__newsItemsCache !== cacheKey) {
+        console.log('📡 NewsGrid: Dispatching newsItemsLoaded event')
+        
+        // Create the event with all necessary data
+        const newsItemsEvent = new CustomEvent('newsItemsLoaded', { 
+          detail: newsItems.map(item => {
+            console.log(`📝 NewsGrid: Preparing item ${item.id} for dispatch - Category: ${item.category}, Image: ${item.image}`)
+            return {
+              id: item.id,
+              title: item.title,
+              summary: item.summary,
+              category: item.category,
+              slug: item.slug,
+              image: item.image || "/placeholder.svg",
+              date: item.date,
+              views: item.views,
+              readTime: item.readTime,
+              articleCount: item.articleCount,
+              sourceCount: item.sourceCount,
+              images: item.images // Include the images array if available
+            }
+          })
+        });
+        
+        // Dispatch the event
+        document.dispatchEvent(newsItemsEvent);
+        console.log('✅ NewsGrid: Dispatched newsItemsLoaded event')
+        
+        // Store the cache key
+        window.__newsItemsCache = cacheKey
+      } else {
+        console.log('⏭️ NewsGrid: Skipping dispatch - items already cached')
+      }
+    } else {
+      console.log('⚠️ NewsGrid: No items to dispatch')
+    }
   }, [newsItems]);
+
+  // Add a new effect to handle the "Read Full Story" button click
+  useEffect(() => {
+    const handleReadFullStory = (event: CustomEvent<{id: number, category: string}>) => {
+      console.log('📖 NewsGrid: Received readFullStory event:', event.detail)
+      const { id, category } = event.detail
+      
+      // Find the news item
+      const newsItem = newsItems.find(item => item.id === id)
+      if (newsItem) {
+        console.log('✅ NewsGrid: Found news item:', newsItem)
+        // Dispatch the newsItemsLoaded event with just this item
+        const event = new CustomEvent('newsItemsLoaded', {
+          detail: [newsItem]
+        })
+        document.dispatchEvent(event)
+        console.log('✅ NewsGrid: Dispatched single item event')
+      } else {
+        console.error('❌ NewsGrid: News item not found:', id)
+      }
+    }
+
+    document.addEventListener('readFullStory', handleReadFullStory as EventListener)
+    return () => {
+      document.removeEventListener('readFullStory', handleReadFullStory as EventListener)
+    }
+  }, [newsItems])
 
   return (
     <>
@@ -1409,7 +1476,7 @@ const markAsRead = async (id: number, completed: boolean = false) => {
                     <Button variant="outline" onClick={closeExpandedCard}>
                       Close
                     </Button>
-                    <Link href={`/news/${newsItems.find((item) => item.id === expandedCardId)?.slug}`} passHref>
+                    <Link href={`/blog/${newsItems.find((item) => item.id === expandedCardId)?.category.toLowerCase()}?id=${expandedCardId}`}>
                       <Button>Read Full Article</Button>
                     </Link>
                   </div>

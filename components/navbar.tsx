@@ -113,7 +113,7 @@ export default function Navbar() {
             Home
           </Link>
           <Link 
-            href="/creator" 
+            href="https://www.harshatdy.in/" 
             className="text-base hover:text-primary transition-colors"
             style={{ fontFamily: "'Bungee Spice', sans-serif" }}
           >

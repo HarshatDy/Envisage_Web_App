@@ -7,6 +7,46 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
+const categories = [
+  "Technology",
+  "Business",
+  "Science",
+  "Health",
+  "Politics",
+  "Entertainment",
+  "Sports",
+  "Environment"
+]
+
+function AnimatedCategory() {
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % categories.length)
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <div className="h-8 overflow-hidden">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentIndex}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -20, opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="text-primary font-medium"
+        >
+          {categories[currentIndex]}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  )
+}
+
 export default function WelcomePopup() {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -56,8 +96,11 @@ export default function WelcomePopup() {
                 </Button>
                 <div className="mb-2 text-sm text-primary font-medium">From the Creator of SummarizeMe</div>
                 <CardTitle className="text-3xl">Welcome to SummariseMe</CardTitle>
+                <div className="mt-2 text-muted-foreground flex items-center justify-center gap-1">
+                  Do you know what happened in the <AnimatedCategory /> domain?
+                </div>
                 <p className="text-muted-foreground mt-2">
-                  Your daily digest of what truly matters, curated and optimized for busy professionals.
+                  If not, then this daily digest is for you.
                 </p>
               </CardHeader>
               <Separator />

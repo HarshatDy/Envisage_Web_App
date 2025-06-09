@@ -8,7 +8,7 @@ export default function Footer() {
   return (
     <footer className="bg-background border-t">
       <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="space-y-4">
             <h3 className="text-lg font-bold">SummariseMe</h3>
             <p className="text-sm text-muted-foreground">
@@ -28,37 +28,6 @@ export default function Footer() {
                 <Youtube className="h-5 w-5 text-muted-foreground hover:text-primary" />
               </Link>
             </div>
-          </div>
-
-          <div>
-            <h3 className="text-lg font-bold mb-4">Categories</h3>
-            <ul className="space-y-2">
-              <li>
-                <Link href="/category/politics" className="text-sm text-muted-foreground hover:text-primary">
-                  Politics
-                </Link>
-              </li>
-              <li>
-                <Link href="/category/technology" className="text-sm text-muted-foreground hover:text-primary">
-                  Technology
-                </Link>
-              </li>
-              <li>
-                <Link href="/category/business" className="text-sm text-muted-foreground hover:text-primary">
-                  Business
-                </Link>
-              </li>
-              <li>
-                <Link href="/category/sports" className="text-sm text-muted-foreground hover:text-primary">
-                  Sports
-                </Link>
-              </li>
-              <li>
-                <Link href="/category/entertainment" className="text-sm text-muted-foreground hover:text-primary">
-                  Entertainment
-                </Link>
-              </li>
-            </ul>
           </div>
 
           <div>

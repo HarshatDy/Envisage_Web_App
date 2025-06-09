@@ -7,6 +7,46 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
+const categories = [
+  "Technology",
+  "Business",
+  "Science",
+  "Health",
+  "Politics",
+  "Entertainment",
+  "Sports",
+  "Environment"
+]
+
+function AnimatedCategory() {
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % categories.length)
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <div className="h-8 overflow-hidden">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentIndex}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -20, opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="text-primary font-medium"
+        >
+          {categories[currentIndex]}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  )
+}
+
 export default function WelcomePopup() {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -40,24 +80,27 @@ export default function WelcomePopup() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-background/80 backdrop-blur-sm overflow-y-auto pt-8 pb-8"
         >
           <motion.div
             initial={{ scale: 0.9, y: 20 }}
             animate={{ scale: 1, y: 0 }}
             exit={{ scale: 0.9, y: 20 }}
-            className="w-full max-w-2xl"
+            className="w-full max-w-2xl my-auto"
           >
-            <Card className="border-primary/20 shadow-lg">
-              <CardHeader className="pb-4 text-center relative">
+            <Card className="border-primary/20 shadow-lg max-h-[90vh] overflow-y-auto">
+              <CardHeader className="pb-4 text-center relative" style={{ fontFamily: "'Unbounded', sans-serif" }}>
                 <Button variant="ghost" size="icon" className="absolute right-4 top-4" onClick={handleClose}>
                   <X className="h-4 w-4" />
                   <span className="sr-only">Close</span>
                 </Button>
                 <div className="mb-2 text-sm text-primary font-medium">From the Creator of SummarizeMe</div>
                 <CardTitle className="text-3xl">Welcome to SummariseMe</CardTitle>
+                <div className="mt-2 text-muted-foreground flex items-center justify-center gap-1">
+                  Do you know what happened in the <AnimatedCategory /> domain?
+                </div>
                 <p className="text-muted-foreground mt-2">
-                  Your daily digest of what truly matters, curated and optimized for busy professionals.
+                  If not, then this daily digest is for you.
                 </p>
               </CardHeader>
               <Separator />

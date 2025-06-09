@@ -6,15 +6,15 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
-import { ObjectId } from 'mongodb'; // Add this import
-import { connectToDatabase, fetchFromCollection, fetchPaginatedData, fetchSingleDocument, fetchWithAggregation } from '../lib/mongodb.js';
+import { ObjectId } from 'mongodb';
+import { connectToDatabase, fetchFromCollection, fetchPaginatedData, fetchSingleDocument, fetchWithAggregation, fetchAllFromCollection } from './lib/mongodb.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load environment variables
-const envPath = resolve(__dirname, '../.env.local');
+const envPath = resolve(__dirname, '.env.local');
 if (fs.existsSync(envPath)) {
   console.log(`Loading environment from: ${envPath}`);
   dotenv.config({ path: envPath });
@@ -147,6 +147,136 @@ app.get('/api/collections', async (req, res) => {
   } catch (error) {
     console.error('Error fetching collections:', error);
     res.status(500).json({ error: 'Failed to fetch collections' });
+  }
+});
+
+// Newsletter subscriber count route
+app.get('/api/newsletter/subscriber-count', async (req, res) => {
+  console.log('📊 GET /api/newsletter/subscriber-count');
+  try {
+    const db = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    const count = await db.collection('newslettersubscriptions').countDocuments({ status: 'active' });
+    console.log('✅ Subscriber count:', count);
+    res.json({ count });
+  } catch (error) {
+    console.error('❌ Error getting subscriber count:', error);
+    res.status(500).json({ error: 'Failed to get subscriber count' });
+  }
+});
+
+// Newsletter subscription route
+app.post('/api/newsletter/subscribe', async (req, res) => {
+  console.log('📧 POST /api/newsletter/subscribe');
+  try {
+    const { email, preferences } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const { db } = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    
+    // First check if the subscription already exists
+    const existingSubscription = await db.collection('newslettersubscriptions').findOne({ 
+      email: email.toLowerCase() 
+    });
+
+    if (existingSubscription) {
+      if (existingSubscription.status === 'active') {
+        return res.json({ 
+          success: true,
+          message: 'This email is already subscribed to our newsletter. Thanks for being part of our community!',
+          isNewSubscription: false
+        });
+      } else {
+        // If subscription exists but is not active, reactivate it
+        await db.collection('newslettersubscriptions').updateOne(
+          { email: email.toLowerCase() },
+          { 
+            $set: { 
+              status: 'active',
+              preferences: preferences || existingSubscription.preferences,
+              updatedAt: new Date()
+            }
+          }
+        );
+        return res.json({
+          success: true,
+          message: 'Welcome back! Your newsletter subscription has been reactivated.',
+          isNewSubscription: false
+        });
+      }
+    }
+
+    // If no existing subscription, create a new one
+    const result = await db.collection('newslettersubscriptions').insertOne({
+      email: email.toLowerCase(),
+      preferences: preferences || {
+        categories: [],
+        frequency: 'daily',
+        timeOfDay: 'morning',
+        format: 'html'
+      },
+      status: 'active',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    console.log('✅ New subscription created');
+    res.json({ 
+      success: true, 
+      message: 'Thank you for subscribing to our newsletter! Welcome to our community.',
+      isNewSubscription: true
+    });
+  } catch (error) {
+    console.error('❌ Error subscribing to newsletter:', error);
+    res.status(500).json({ error: 'Failed to subscribe to newsletter' });
+  }
+});
+
+// Newsletter popup state route
+app.get('/api/newsletter/popup-state/:userId', async (req, res) => {
+  console.log('🔍 GET /api/newsletter/popup-state/:userId');
+  try {
+    const { userId } = req.params;
+    const db = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    
+    const interaction = await db.collection('newsletterpopupinteractions')
+      .findOne({ userId });
+
+    const canShow = !interaction || 
+      (interaction.lastAction === 'maybe_later' && 
+       new Date() > new Date(interaction.cooldownUntil));
+
+    console.log('📊 Can show popup:', canShow);
+    res.json({ canShow });
+  } catch (error) {
+    console.error('❌ Error getting popup state:', error);
+    res.status(500).json({ error: 'Failed to get popup state' });
+  }
+});
+
+// Newsletter popup interaction route
+app.post('/api/newsletter/popup-interaction', async (req, res) => {
+  console.log('🖱️ POST /api/newsletter/popup-interaction');
+  try {
+    const { userId, action } = req.body;
+    if (!userId || !action) {
+      return res.status(400).json({ error: 'User ID and action are required' });
+    }
+
+    const db = await connectToDatabase(process.env.MONGODB_URI, process.env.MONGODB_DB);
+    await db.collection('newsletterpopupinteractions').insertOne({
+      userId,
+      action,
+      timestamp: new Date(),
+      cooldownUntil: action === 'maybe_later' ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null
+    });
+
+    console.log('✅ Popup interaction logged');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Error recording popup interaction:', error);
+    res.status(500).json({ error: 'Failed to record popup interaction' });
   }
 });
 
@@ -796,36 +926,147 @@ app.post('/api/users/:userId/interactions', async (req, res) => {
         if (timeSpent) userStats.totalTimeSpent += timeSpent;
         userStats.lastActivity = new Date();
         
-        // For envisage_web items, extract the category directly
-        // If articleId is in format docId_itemId, parse the newsItemId and get category from envisage_web
+        // Get the article's category and update category engagement
+        let category;
+        
         if (articleId.includes('_')) {
+          // For envisage_web items, extract the category directly
           try {
             const [docId, itemId] = articleId.split('_');
+            console.log('Extracting category for envisage_web article:', { docId, itemId });
             
             const { db } = await connectToDatabase(
               process.env.MONGODB_URI,
               process.env.MONGODB_DB
             );
+
+            // First try to find the document using the date-based query
+            const dateKey = determineNewsDateKey();
+            console.log('Using date key for query:', dateKey);
             
-            const doc = await db.collection('envisage_web').findOne(
-              { _id: docId, "newsItems.id": parseInt(itemId) },
-              { projection: { "newsItems.$": 1 } }
+            let doc = await db.collection('envisage_web').findOne(
+              { [`envisage_web.${dateKey}`]: { $exists: true } }
             );
             
-            if (doc && doc.newsItems && doc.newsItems[0]) {
-              const category = doc.newsItems[0].category;
-              if (category) {
-                const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
-                
-                userStats.categoryEngagement.set(category, {
-                  timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
-                  articlesRead: existingEngagement.articlesRead + 1
+            console.log('Initial query result:', {
+              found: !!doc,
+              dateKey,
+              docKeys: doc ? Object.keys(doc) : []
+            });
+
+            if (doc && doc.envisage_web) {
+              // Log the full envisage_web structure for debugging
+              console.log('envisage_web structure:', {
+                dateKey,
+                hasDateKey: !!doc.envisage_web[dateKey],
+                dateKeyStructure: doc.envisage_web[dateKey] ? Object.keys(doc.envisage_web[dateKey]) : [],
+                fullStructure: JSON.stringify(doc.envisage_web[dateKey], null, 2)
+              });
+
+              // Get all date keys from envisage_web
+              const dateKeys = Object.keys(doc.envisage_web);
+              console.log('Available date keys:', dateKeys);
+              
+              // Try each date key until we find the news item
+              for (const dateKey of dateKeys) {
+                const dateData = doc.envisage_web[dateKey];
+                console.log(`Checking date key ${dateKey}:`, {
+                  hasDateData: !!dateData,
+                  dateDataKeys: dateData ? Object.keys(dateData) : [],
+                  hasCategories: dateData && dateData.categories ? true : false
                 });
+
+                // Check if we have categories in the date data
+                if (dateData && dateData.categories) {
+                  // Look through each category for the news item
+                  for (const [categoryName, categoryData] of Object.entries(dateData.categories)) {
+                    console.log(`Checking category ${categoryName}:`, {
+                      hasArticles: !!categoryData.articles,
+                      articleCount: categoryData.articles ? categoryData.articles.length : 0
+                    });
+
+                    if (categoryData.articles && Array.isArray(categoryData.articles)) {
+                      const article = categoryData.articles.find(a => a.id === parseInt(itemId));
+                      if (article) {
+                        category = categoryName;
+                        console.log('Found category in article:', {
+                          dateKey,
+                          itemId,
+                          category,
+                          article: {
+                            id: article.id,
+                            title: article.title,
+                            category: categoryName
+                          }
+                        });
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                if (category) break; // Exit if we found the category
               }
+            } else {
+              // If document not found, try to list available documents
+              const sampleDocs = await db.collection('envisage_web')
+                .find({}, { projection: { _id: 1, "envisage_web": 1 } })
+                .limit(5)
+                .toArray();
+              console.log('Sample available documents:', sampleDocs.map(doc => ({
+                _id: doc._id,
+                hasEnvisageWeb: !!doc.envisage_web,
+                dateKeys: doc.envisage_web ? Object.keys(doc.envisage_web) : [],
+                sampleStructure: doc.envisage_web ? 
+                  Object.keys(doc.envisage_web).map(key => ({
+                    dateKey: key,
+                    hasCategories: !!doc.envisage_web[key].categories,
+                    categoryNames: doc.envisage_web[key].categories ? 
+                      Object.keys(doc.envisage_web[key].categories) : []
+                  })) : []
+              })));
             }
           } catch (error) {
             console.error('Error processing envisage_web category:', error);
           }
+        } else {
+          // For regular articles, get category from the Article model
+          try {
+            const { Article } = models;
+            const article = await Article.findById(articleId);
+            if (article) {
+              category = article.category;
+              console.log('Found regular article category:', {
+                articleId,
+                category,
+                title: article.title
+              });
+            }
+          } catch (error) {
+            console.error('Error getting article category:', error);
+          }
+        }
+        
+        // Update category engagement if we found a category
+        if (category) {
+          // Ensure category is a string and trim any whitespace
+          category = String(category).trim();
+          console.log('Using category for engagement:', category);
+          
+          const existingEngagement = userStats.categoryEngagement.get(category) || { timeSpent: 0, articlesRead: 0 };
+          console.log('Existing engagement for category:', existingEngagement);
+          
+          userStats.categoryEngagement.set(category, {
+            timeSpent: existingEngagement.timeSpent + (timeSpent || 0),
+            articlesRead: existingEngagement.articlesRead + 1
+          });
+          
+          console.log('Updated category engagement:', {
+            category,
+            newStats: userStats.categoryEngagement.get(category)
+          });
+        } else {
+          console.log('No category found for article:', articleId);
         }
         
         // Update daily stats
@@ -1206,12 +1447,8 @@ app.post('/api/envisage_web/view', async (req, res) => {
         console.log('Sample document IDs:', allDocs.map(doc => String(doc._id)));
         
         return res.status(404).json({ 
-          error: 'Document not found',
-          details: { 
-            documentId,
-            searchedIds: [String(documentObjectId), documentId],
-            sampleIds: allDocs.map(doc => String(doc._id))
-          }
+          error: 'Document not found and failed to retrieve sample IDs',
+          details: { documentId, searchedIds: [String(documentObjectId), documentId], sampleIds: allDocs.map(doc => String(doc._id)) }
         });
       } catch (error) {
         console.error(`Error retrieving sample document IDs:`, error);
@@ -1442,6 +1679,64 @@ app.get('/api/envisage_web/all', async (req, res) => {
   }
 });
 
+//----------------------------------------------------------------------------------------
+
+app.get('/api/blogs', async (req, res) => {
+  try {
+    const documents = await fetchAllFromCollection(
+      'blogs',
+      process.env.MONGODB_URI,
+      'HarshatDy_Blogs'
+    );
+    
+    if (!documents || documents.length === 0) {
+      return res.status(404).json({ message: 'No Blogs found' });
+    }
+    
+    // Return all the blogs for the portfolio
+    return res.status(201).json({
+      documents
+    });
+    
+    // return res.status(404).json({
+    //   message: 'No blogs found for the portfolio',
+    //   availableDates: documents[0].Summary ? Object.keys(documents[0].Summary) : []
+    // });
+  } catch (error) {
+    console.error('Error fetching blogs for the portfolio:', error);
+    return res.status(500).json({ error: 'Failed to fetch blogs for portfolio' });
+  }
+});
+
+
+app.get('/api/hero_blogs', async (req, res) => {
+  try {
+    const documents = await fetchAllFromCollection(
+      'hero_blogs', 
+      process.env.MONGODB_URI,
+      'HarshatDy_Blogs'
+    );
+    
+    if (!documents || documents.length === 0) {
+      return res.status(404).json({ message: 'No Blogs found' });
+    }
+
+    console.log("Returned Documents", documents)
+    
+    // Return all the blogs for the portfolio
+    return res.status(201).json({
+      documents
+    });
+    // return res.status(404).json({
+    //   message: 'No blogs found for the portfolio',
+    //   availableDates: documents[0].Summary ? Object.keys(documents[0].Summary) : []
+    // });
+  } catch (error) {
+    console.error('Error fetching blogs for the portfolio:', error);
+    return res.status(500).json({ error: 'Failed to fetch blogs for portfolio' });
+  }
+});
+
 // Start server - binding to 127.0.0.1 for security in production, or all interfaces in development
 const isDevelopment = process.env.NODE_ENV === 'development';
 const hostname = isDevelopment ? '0.0.0.0' : '127.0.0.1';
@@ -1454,6 +1749,7 @@ app.listen(PORT, hostname, () => {
     console.log(`ℹ️  Running in development mode - accepting remote connections`);
   } else {
     console.log(`ℹ️  Running in production mode - only accepting local connections`);
+    console.log(`MONGO URL : ${process.env.MONGODB_URI}`);
   }
   
   console.log('\n📡 API endpoints:');
@@ -1480,32 +1776,6 @@ app.listen(PORT, hostname, () => {
   console.log(`   GET  /api/envisage_web/all       - Get all documents from envisage_web collection`);
   
   console.log('\n💡 For frontend, configure .env.local with:');
-  console.log(`   NEXT_PUBLIC_API_URL=http://127.0.0.1:${PORT}`);
+  console.log(`   NEXT_PUBLIC_API_URL=${hostname}:${PORT}`);
   console.log('\n📋 Press Ctrl+C to stop the server');
 });
-
-// Comment out the previous implementation as it's now replaced by Express server
-/*
-async function runMongoDBServer() {
-  try {
-    // Connect to MongoDB
-    const { db } = await connectToDatabase();
-    console.log('Connected to MongoDB successfully');
-    
-    // Test querying collections
-    console.log('Available collections:');
-    const collections = await db.listCollections().toArray();
-    
-    // Fetch a sample from gemini_api collection
-    const geminiDocs = await fetchFromCollection('gemini_api', {}, { limit: 1 });
-    console.log(`\nFound ${geminiDocs.length} document(s) in gemini_api collection`);
-    
-    // Keep the script running to simulate a server
-    console.log('\nMongoDB server is running. Press Ctrl+C to stop.');
-  } catch (error) {
-    console.error('Error running MongoDB server:', error);
-  }
-}
-
-runMongoDBServer();
-*/

@@ -1,0 +1,116 @@
+Category Tracking Feature Specification
+====================================
+
+Overview
+--------
+The category tracking feature enhances user engagement analytics by recording and analyzing user interactions with articles across different categories. This data is used to personalize content recommendations and provide insights into user reading preferences.
+
+Technical Implementation
+-----------------------
+1. Data Structure:
+   - UserStats Schema:
+     ```javascript
+     categoryEngagement: {
+       type: Map,
+       of: {
+         timeSpent: Number,
+         articlesRead: Number
+       },
+       default: {}
+     }
+     ```
+
+2. Category Tracking Flow:
+   a. Article Completion:
+      - When user marks article as read
+      - When article is fully scrolled
+      - When user spends minimum time threshold
+   
+   b. Category Extraction:
+      - For envisage_web articles:
+        - Parse compound ID (docId_itemId)
+        - Query envisage_web collection
+        - Extract category from newsItems array
+      - For regular articles:
+        - Query Article model
+        - Extract category directly
+
+3. Stats Update Process:
+   a. Category Engagement:
+      - Increment articlesRead count
+      - Add timeSpent to total
+      - Update lastActivity timestamp
+   
+   b. Daily Stats:
+      - Update daily reading time
+      - Increment daily articles count
+      - Maintain date-based tracking
+
+4. Data Validation:
+   - Ensure category is string type
+   - Trim whitespace from category names
+   - Validate timeSpent is positive number
+   - Verify article completion status
+
+API Endpoints
+------------
+1. POST /api/users/:userId/interactions
+   - Records article completion
+   - Updates category engagement
+   - Returns updated stats
+
+2. GET /api/users/:userId/stats
+   - Retrieves user engagement data
+   - Includes category breakdown
+   - Returns formatted statistics
+
+Error Handling
+-------------
+1. Category Not Found:
+   - Log warning with article ID
+   - Continue processing without category
+   - Maintain other engagement metrics
+
+2. Database Errors:
+   - Retry failed operations
+   - Log detailed error information
+   - Return appropriate error responses
+
+3. Invalid Data:
+   - Validate input parameters
+   - Sanitize category names
+   - Handle missing or malformed data
+
+Logging and Monitoring
+---------------------
+1. Category Tracking:
+   - Log category extraction attempts
+   - Record successful updates
+   - Track failed operations
+
+2. Performance Metrics:
+   - Monitor update operation times
+   - Track database query performance
+   - Log memory usage patterns
+
+3. Debug Information:
+   - Log category name changes
+   - Record engagement updates
+   - Track user interaction patterns
+
+Future Enhancements
+------------------
+1. Category Analytics:
+   - Add trend analysis
+   - Implement category preferences
+   - Track reading patterns
+
+2. Personalization:
+   - Category-based recommendations
+   - Reading time predictions
+   - Content prioritization
+
+3. Reporting:
+   - Category engagement reports
+   - User preference insights
+   - Reading pattern analysis 
